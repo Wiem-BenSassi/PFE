@@ -1,9 +1,11 @@
-from paddleocr import PaddleOCR
+from app.services.regex_service import extract_invoice_data
+from fastapi import FastAPI
+from app.controllers.invoce_controller import router as invoice_router
 
-ocr = PaddleOCR(lang="fr")
+app = FastAPI()
 
-result = ocr.ocr("at1.jpg")
+app.include_router(invoice_router)
 
-for line in result[0]:
-    text = line[1][0]
-    print(text)
+@app.get("/")
+def root():
+    return {"message": "API running"}

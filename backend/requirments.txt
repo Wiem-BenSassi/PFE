@@ -1,0 +1,11 @@
+fastapi==0.110.0
+uvicorn==0.27.1
+paddlepaddle==2.6.2
+paddleocr==2.7.3
+opencv-python==4.6.0.66
+pillow==10.2.0
+numpy==1.26.4
+python-multipart==0.0.9
+pydantic==2.6.1
+psycopg2-binary==2.9.9
+regex==2023.12.25
