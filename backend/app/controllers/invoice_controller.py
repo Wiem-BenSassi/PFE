@@ -1,14 +1,12 @@
-# On importe APIRouter pour créer un routeur séparé pour organiser nos endpoints,
-# UploadFile et File pour gérer les fichiers envoyés via HTTP.
 from fastapi import APIRouter, UploadFile, File
-from app.services.invoice_services import process_invoice
-# Création d'un routeur FastAPI spécifique à la partie "invoice" (factures).
+from app.services.invoice_service import process_invoice
 
 router = APIRouter()
-# Définition d'un endpoint POST pour l'upload de factures.
-# "/upload-invoice" est l'URL à laquelle le client enverra la facture.
 
-@router.post("/upload-invoice")
+@router.post("/upload")
 async def upload_invoice(file: UploadFile = File(...)):
+    """
+    Upload an invoice file and process it
+    """
     result = process_invoice(file)
     return result
