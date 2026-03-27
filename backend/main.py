@@ -1,41 +1,43 @@
-# Point d'entrée principal de l'application FastAPI
-# C'est ce fichier qu'on lance avec : uvicorn main:app --reload
-
+# main.py
 import sys
 import os
 
-# On ajoute le dossier backend au chemin Python
-# Ça permet d'importer nos modules avec "from app.xxx import yyy"
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# On importe les routeurs — chaque routeur gère un groupe d'endpoints
+from app.models import document_model, invoice_model
+from app.database.connection import Base, engine
+
+Base.metadata.create_all(bind=engine)
+
 from app.controllers.invoice_controller import router as invoice_router
-from auth.login import router as login_router
+from auth.login                          import router as login_router
 
-# Création de l'application FastAPI
-app = FastAPI(title="Invoice API")
-
-# Configuration CORS — indispensable pour que React (port 3000) puisse
-# appeler notre API (port 8000) sans être bloqué par le navigateur
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],        # accepte les requêtes depuis n'importe quelle origine
-    allow_credentials=True,
-    allow_methods=["*"],        # accepte GET, POST, PUT, DELETE, etc.
-    allow_headers=["*"],        # accepte tous les headers
+app = FastAPI(
+    title       = "Vernicolor Invoice API",
+    description = "AI-powered invoice processing system",
+    version     = "1.0.0"
 )
 
-# Route de test — pour vérifier rapidement que l'API tourne bien
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins     = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials = True,
+    allow_methods     = ["*"],
+    allow_headers     = ["*"],
+)
+
 @app.get("/")
 def root():
-    return {"message": "API running"}
+    return {
+        "message": "Vernicolor API running ✅",
+        "docs":    "http://localhost:8000/docs"
+    }
 
-# On enregistre le routeur d'authentification sous le préfixe /auth
-# Donc POST /login devient POST /auth/login
-app.include_router(login_router, prefix="/auth", tags=["Authentication"])
-
-# On enregistre le routeur des factures sous le préfixe /invoices
+app.include_router(login_router,   prefix="/auth",     tags=["Authentication"])
 app.include_router(invoice_router, prefix="/invoices", tags=["Invoices"])
