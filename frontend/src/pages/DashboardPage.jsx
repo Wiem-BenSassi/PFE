@@ -4,6 +4,51 @@
 import { MiniBarChart, MiniLineChart } from "../components/Charts";
 
 const DashboardPage = () => {
+
+  // ── Vérification du rôle ──────────────────────────────────
+  // Seul le rôle "Comptable" peut voir cette page
+  const role = localStorage.getItem("role") || "";
+
+  if (role !== "Comptable") {
+    return (
+      <div style={{
+        minHeight: "100vh", display: "flex", alignItems: "center",
+        justifyContent: "center", padding: "80px 28px", position: "relative", zIndex: 1,
+      }}>
+        <div style={{
+          textAlign: "center", maxWidth: 380,
+          background: "rgba(248,113,113,0.06)",
+          border: "1px solid rgba(248,113,113,0.25)",
+          borderRadius: 20, padding: "48px 40px",
+        }}>
+          {/* Icône cadenas */}
+          <div style={{
+            width: 64, height: 64, borderRadius: "50%",
+            background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            margin: "0 auto 20px",
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+              stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 800, color: "#f87171", marginBottom: 12 }}>
+            Accès refusé
+          </h2>
+          <p style={{ fontSize: 14, color: "#5a6e99", lineHeight: 1.6, marginBottom: 8 }}>
+            Cette page est réservée au rôle <strong style={{ color: "#e8f0ff" }}>Comptable</strong>.
+          </p>
+          <p style={{ fontSize: 12, color: "#3a4d72" }}>
+            Votre rôle : <span style={{ color: "#60a5fa" }}>{role || "Non défini"}</span>
+          </p>
+        </div>
+      </div>
+    );
+  }
+  // ─────────────────────────────────────────────────────────
+
   const months      = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const invoiceData = [42,58,53,71,68,84,79,92,88,104,98,112];
   const revenueData = [38,52,47,65,70,81,74,90,85,99,94,108];

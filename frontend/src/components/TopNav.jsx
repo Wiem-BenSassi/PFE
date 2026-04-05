@@ -31,11 +31,32 @@ const TopNav = ({ page, setPage, user = "Admin", onLogout }) => (
     </div>
 
     {/* Liens de navigation — page active mise en surbrillance */}
-    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-      <button className={`nav-link ${page === "home"      ? "active" : ""}`} onClick={() => setPage("home")}>Home</button>
-      <button className={`nav-link ${page === "upload"    ? "active" : ""}`} onClick={() => setPage("upload")}>Invoices</button>
-      <button className={`nav-link ${page === "dashboard" ? "active" : ""}`} onClick={() => setPage("dashboard")}>Dashboard</button>
-    </div>
+<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+  <button className={`nav-link ${page === "home" ? "active" : ""}`} onClick={() => setPage("home")}>
+    Home
+  </button>
+
+  <button className={`nav-link ${page === "upload" ? "active" : ""}`} onClick={() => setPage("upload")}>
+    Invoices
+  </button>
+
+  <button className={`nav-link ${page === "dashboard" ? "active" : ""}`} onClick={() => setPage("dashboard")}>
+    Dashboard
+  </button>
+
+  {/* 🔐 Bouton Admin — visible uniquement pour Admin et Admin Système */}
+  {["Administrateur Système", "Administrateur"].includes(
+    localStorage.getItem("role")
+  ) && (
+    <button
+      className={`nav-link ${page === "admin" ? "active" : ""}`}
+      onClick={() => setPage("admin")}
+    >
+      Admin
+    </button>
+  )}
+</div>
+
 
     {/* Zone utilisateur : avatar + nom + bouton déconnexion */}
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

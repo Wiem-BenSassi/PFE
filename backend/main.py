@@ -13,6 +13,7 @@ from app.database.connection import Base, engine
 Base.metadata.create_all(bind=engine)
 
 from app.controllers.invoice_controller import router as invoice_router
+from app.controllers.admin_controller   import router as admin_router  # ← AJOUT
 from auth.login                          import router as login_router
 
 app = FastAPI(
@@ -35,9 +36,10 @@ app.add_middleware(
 @app.get("/")
 def root():
     return {
-        "message": "Vernicolor API running ✅",
+        "message": "Vernicolor API running ",
         "docs":    "http://localhost:8000/docs"
     }
 
 app.include_router(login_router,   prefix="/auth",     tags=["Authentication"])
 app.include_router(invoice_router, prefix="/invoices", tags=["Invoices"])
+app.include_router(admin_router,   prefix="/admin",    tags=["Admin"])  # ← AJOUT
