@@ -3,7 +3,7 @@
 //
 // RÈGLES MÉTIER :
 //   - "note de frais"         → visible pour TOUS les rôles
-//   - "facture fournisseur"   → visible UNIQUEMENT pour le rôle "comptabilité"
+//   - "facture fournisseur"   → visible UNIQUEMENT pour le rôle "Comptable"
 //
 // Le rôle est lu depuis localStorage (sauvegardé lors du login).
 
@@ -12,12 +12,11 @@ import { Spinner, FileIcon } from "../components/Icons";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES DE RÔLES
-// Centralisées ici pour éviter les fautes de frappe dans les comparaisons
 // ─────────────────────────────────────────────────────────────────────────────
 const ROLES = {
   ADMIN_SYSTEME : "Administrateur Système",
   ADMIN_METIER  : "Administrateur",
-  COMPTABILITE  : "comptabilité",
+  Comptable     : "Comptable",
   EMPLOYE       : "Utilisateur",
 };
 
@@ -79,8 +78,8 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
   };
 
   const openInvoicePicker = () => {
-    // Facture fournisseur → comptabilité uniquement
-    if (role !== ROLES.COMPTABILITE) {
+    // ✅ CORRECTION : utilise ROLES.Comptable (et non ROLES.COMPTABILITE qui est undefined)
+    if (role !== ROLES.Comptable) {
       setError("Accès refusé : seul le rôle Comptabilité peut uploader des factures fournisseur.");
       return;
     }
@@ -90,15 +89,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
   };
 
   // ── Upload principal avec type de fichier ────────────────────────────────────
-  //
-  //   handleUpload(file, type)
-  //     file : objet File JS
-  //     type : "expense" | "supplier_invoice"
-  //
-  //   Envoie le fichier au backend avec le champ file_type
-  //   Le backend vérifie à son tour le rôle via JWT (double sécurité).
-  // ────────────────────────────────────────────────────────────────────────────
-
   const handleUpload = async (file, type) => {
     setUploading(true);
     setError("");
@@ -106,18 +96,14 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
     try {
       const formData = new FormData();
       formData.append("file",      file);
-      formData.append("file_type", type);   // ← envoyé au backend pour le contrôle RBAC
+      formData.append("file_type", type);
 
-      // Endpoint unifié — le backend route selon file_type
       const res  = await fetch("http://127.0.0.1:8000/invoices/upload", {
         method  : "POST",
-        headers : {
-          // Si tu as un JWT : Authorization: `Bearer ${localStorage.getItem("token")}`
-        },
+        headers : {},
         body    : formData,
       });
 
-      // Gestion des erreurs HTTP (403 accès refusé, 400 mauvais type, etc.)
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.detail || `Erreur serveur (${res.status})`);
@@ -125,7 +111,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
 
       const data = await res.json();
 
-      // Normalise les noms de champs snake_case → camelCase
       const ocrResult = {
         invoiceNumber: data.invoice_number ?? data.invoiceNumber ?? "",
         invoiceDate:   data.invoice_date   ?? data.invoiceDate   ?? "",
@@ -137,14 +122,13 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
         name: file.name,
         size: (file.size / 1024).toFixed(1) + " KB",
         date: "Just now",
-        type,   // on conserve le type pour l'affichage dans l'historique
+        type,
       }];
 
       if (onUploaded) onUploaded(newUploaded);
       setUploaded(prev => [...prev, ...newUploaded]);
       setFiles([]);
 
-      // Redirige vers la page de vérification OCR
       if (onOcrDone) onOcrDone(ocrResult);
 
     } catch (err) {
@@ -189,8 +173,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
         </div>
 
         {/* ── Sélecteur de type d'upload ───────────────────────────────────── */}
-        {/* Les deux boutons sont toujours affichés, mais "facture fournisseur"
-            est grisé pour les rôles non autorisés — avec un tooltip explicatif */}
         <div className="fe2" style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
 
           {/* ── Bouton Note de frais — TOUS LES RÔLES ── */}
@@ -213,7 +195,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
             onMouseLeave={e => { if (uploadType !== UPLOAD_TYPES.EXPENSE) e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-              {/* Icône reçu */}
               <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -226,7 +207,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
                 <p style={{ fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700, color: "#e8f0ff", marginBottom: 2 }}>
                   Note de frais
                 </p>
-                {/* Badge "Tous les rôles" */}
                 <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.22)", fontWeight: 500 }}>
                   Tous les rôles
                 </span>
@@ -240,13 +220,13 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
           {/* ── Bouton Facture fournisseur — COMPTABILITÉ UNIQUEMENT ── */}
           <div
             onClick={openInvoicePicker}
-            title={role !== ROLES.COMPTABILITE ? "Accès réservé au rôle Comptabilité" : ""}
+            title={role !== ROLES.Comptable ? "Accès réservé au rôle Comptabilité" : ""}
             style={{
               flex: "1 1 220px", padding: "20px 22px", borderRadius: 16,
               transition: "all 0.25s", position: "relative",
-              // Grisé si pas le bon rôle
-              cursor: role === ROLES.COMPTABILITE ? "pointer" : "not-allowed",
-              opacity: role === ROLES.COMPTABILITE ? 1 : 0.45,
+              // ✅ CORRECTION : utilise ROLES.Comptable partout
+              cursor: role === ROLES.Comptable ? "pointer" : "not-allowed",
+              opacity: role === ROLES.Comptable ? 1 : 0.45,
               background: uploadType === UPLOAD_TYPES.SUPPLIER_INVOICE
                 ? "linear-gradient(145deg,rgba(37,99,235,0.12),rgba(37,99,235,0.06))"
                 : "linear-gradient(145deg,#0d1627,#0a1120)",
@@ -257,11 +237,10 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
                 ? "0 0 24px rgba(37,99,235,0.14)"
                 : "none",
             }}
-            onMouseEnter={e => { if (role === ROLES.COMPTABILITE && uploadType !== UPLOAD_TYPES.SUPPLIER_INVOICE) e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)"; }}
-            onMouseLeave={e => { if (role === ROLES.COMPTABILITE && uploadType !== UPLOAD_TYPES.SUPPLIER_INVOICE) e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; }}
+            onMouseEnter={e => { if (role === ROLES.Comptable && uploadType !== UPLOAD_TYPES.SUPPLIER_INVOICE) e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)"; }}
+            onMouseLeave={e => { if (role === ROLES.Comptable && uploadType !== UPLOAD_TYPES.SUPPLIER_INVOICE) e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-              {/* Icône bâtiment / fournisseur */}
               <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(37,99,235,0.12)", border: "1px solid rgba(37,99,235,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round">
                   <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -272,7 +251,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
                 <p style={{ fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700, color: "#e8f0ff", marginBottom: 2 }}>
                   Facture fournisseur
                 </p>
-                {/* Badge rôle requis */}
                 <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "rgba(37,99,235,0.1)", color: "#60a5fa", border: "1px solid rgba(37,99,235,0.22)", fontWeight: 500 }}>
                   Comptabilité uniquement
                 </span>
@@ -283,7 +261,7 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
             </p>
 
             {/* Icône cadenas si accès refusé */}
-            {role !== ROLES.COMPTABILITE && (
+            {role !== ROLES.Comptable && (
               <div style={{ position: "absolute", top: 12, right: 12 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5a6e99" strokeWidth="2" strokeLinecap="round">
                   <rect x="3" y="11" width="18" height="11" rx="2"/>
@@ -313,7 +291,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
         )}
 
         {/* ── Inputs cachés ────────────────────────────────────────────────── */}
-        {/* Note de frais — tous les rôles */}
         <input
           ref={inputExpenseRef}
           type="file"
@@ -322,16 +299,15 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
           onChange={handlePick}
           style={{ display: "none" }}
         />
-        {/* Facture fournisseur — comptabilité uniquement (double protection) */}
+        {/* ✅ CORRECTION : utilise ROLES.Comptable */}
         <input
           ref={inputInvoiceRef}
           type="file"
           multiple
           accept="application/pdf,image/*"
-          onChange={role === ROLES.COMPTABILITE ? handlePick : undefined}
+          onChange={role === ROLES.Comptable ? handlePick : undefined}
           style={{ display: "none" }}
         />
-        {/* Caméra mobile */}
         <input
           ref={cameraRef}
           type="file"
@@ -355,8 +331,8 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
           onClick={() => {
-            // Drag & drop utilise le type actuellement sélectionné
-            if (uploadType === UPLOAD_TYPES.SUPPLIER_INVOICE && role !== ROLES.COMPTABILITE) {
+            // ✅ CORRECTION : utilise ROLES.Comptable
+            if (uploadType === UPLOAD_TYPES.SUPPLIER_INVOICE && role !== ROLES.Comptable) {
               setError("Accès refusé : seul le rôle Comptabilité peut uploader des factures fournisseur.");
               return;
             }
@@ -378,7 +354,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
             {dragging ? "Déposez ici" : "Glissez-déposez votre fichier"}
           </p>
 
-          {/* Badge du type sélectionné */}
           <span style={{ display: "inline-block", fontSize: 11, padding: "3px 12px", borderRadius: 20, marginBottom: 16, fontWeight: 500, ...uploadTypeBadgeStyle }}>
             {uploadTypeLabel}
           </span>
@@ -404,7 +379,7 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
             </div>
 
             {/* Browse facture fournisseur — comptabilité seulement */}
-            {role === ROLES.COMPTABILITE && (
+            {role === ROLES.Comptable && (
               <div
                 className="btn-primary"
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", borderRadius: 10, fontSize: 13, cursor: "pointer" }}
@@ -482,7 +457,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
                 <p style={{ fontSize: 13, fontWeight: 600, color: "#e8f0ff" }}>
                   {files.length} fichier{files.length > 1 ? "s" : ""} prêt{files.length > 1 ? "s" : ""}
                 </p>
-                {/* Rappel du type sélectionné */}
                 <span style={{ fontSize: 11, ...uploadTypeBadgeStyle, padding: "2px 8px", borderRadius: 20, fontWeight: 500 }}>
                   {uploadTypeLabel}
                 </span>
@@ -536,7 +510,6 @@ const UploadPage = ({ onUploaded, onOcrDone }) => {
                     <p style={{ fontSize: 13, color: "#e8f0ff" }}>{f.name}</p>
                     <p style={{ fontSize: 11, color: "#5a6e99" }}>
                       {f.size} · {f.date} ·{" "}
-                      {/* Badge du type dans l'historique */}
                       <span style={{ color: f.type === UPLOAD_TYPES.SUPPLIER_INVOICE ? "#60a5fa" : "#10b981" }}>
                         {f.type === UPLOAD_TYPES.SUPPLIER_INVOICE ? "Facture fournisseur" : "Note de frais"}
                       </span>

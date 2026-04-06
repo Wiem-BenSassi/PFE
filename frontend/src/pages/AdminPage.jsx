@@ -65,6 +65,10 @@ export default function AdminPage() {
   const [dateTo,      setDateTo]      = useState("");
   const [toast,       setToast]       = useState(null);
 
+  // ── Barres de recherche ───────────────────────────────────
+  const [searchSeuils,      setSearchSeuils]      = useState(""); // filtre onglet seuils
+  const [searchConsomption, setSearchConsomption] = useState(""); // filtre onglet consommation
+
   // ── Charger les données au montage ────────────────────────
   useEffect(() => { loadAll(); }, []);
 
@@ -157,6 +161,25 @@ export default function AdminPage() {
   };
 
   const maxTnd = Math.max(...consumption.map(c => c.total_tnd), 1);
+
+  // ── Filtrage en temps réel ────────────────────────────────
+  // Seuils : filtre sur role_name
+  const seuilsFiltres = thresholds.filter(t =>
+    t.role_name.toLowerCase().includes(searchSeuils.toLowerCase())
+  );
+  // Consommation : filtre sur username OU role
+  const consomFiltres = consumption.filter(u =>
+    u.username.toLowerCase().includes(searchConsomption.toLowerCase()) ||
+    u.role.toLowerCase().includes(searchConsomption.toLowerCase())
+  );
+
+  // ── Style input recherche ─────────────────────────────────
+  const searchInput = {
+    width: "100%", padding: "9px 14px 9px 38px",
+    borderRadius: 9, border: "1px solid rgba(255,255,255,0.1)",
+    background: "rgba(255,255,255,0.04)", color: "#e8f0ff",
+    fontSize: 13, outline: "none", boxSizing: "border-box",
+  };
 
   // ── Style commun card ─────────────────────────────────────
   const card = {
@@ -253,8 +276,31 @@ export default function AdminPage() {
                 Seuils de remboursement
               </p>
               <span style={{ fontSize: 12, color: "#5a6e99" }}>
-                {thresholds.length} rôle{thresholds.length > 1 ? "s" : ""}
+                {seuilsFiltres.length} / {thresholds.length} rôle{thresholds.length > 1 ? "s" : ""}
               </span>
+            </div>
+
+            {/* ── Barre de recherche seuils ──────────────── */}
+            <div style={{ padding: "14px 24px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+              <div style={{ position: "relative" }}>
+                <svg style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+                  width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5a6e99" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  type="text"
+                  value={searchSeuils}
+                  onChange={e => setSearchSeuils(e.target.value)}
+                  placeholder="Rechercher par rôle… (ex: Comptable)"
+                  style={searchInput}
+                />
+                {searchSeuils && (
+                  <button onClick={() => setSearchSeuils("")}
+                    style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#5a6e99", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>
+                    ×
+                  </button>
+                )}
+              </div>
             </div>
 
             {loading ? (
@@ -272,7 +318,12 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {thresholds.map((t, i) => (
+                    {seuilsFiltres.length === 0 && (
+                      <tr><td colSpan={5} style={{ padding: "32px 20px", textAlign: "center", color: "#5a6e99", fontSize: 13 }}>
+                        Aucun rôle trouvé pour « {searchSeuils} »
+                      </td></tr>
+                    )}
+                    {seuilsFiltres.map((t, i) => (
                       <>
                         {/* Ligne normale */}
                         <tr
@@ -444,9 +495,42 @@ export default function AdminPage() {
               </div>
             ) : (
               <>
+                {/* ── Barre de recherche consommation ──────── */}
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ position: "relative" }}>
+                    <svg style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+                      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5a6e99" strokeWidth="2" strokeLinecap="round">
+                      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input
+                      type="text"
+                      value={searchConsomption}
+                      onChange={e => setSearchConsomption(e.target.value)}
+                      placeholder="Rechercher par nom ou rôle… (ex: Wiem, Comptable)"
+                      style={searchInput}
+                    />
+                    {searchConsomption && (
+                      <button onClick={() => setSearchConsomption("")}
+                        style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#5a6e99", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 11, color: "#5a6e99", marginTop: 6 }}>
+                    {consomFiltres.length} utilisateur{consomFiltres.length > 1 ? "s" : ""} affiché{consomFiltres.length > 1 ? "s" : ""}
+                    {searchConsomption && ` pour « ${searchConsomption} »`}
+                  </p>
+                </div>
+
+                {consomFiltres.length === 0 ? (
+                  <div style={{ ...card, padding: 48, textAlign: "center", color: "#5a6e99" }}>
+                    Aucun utilisateur trouvé pour « {searchConsomption} »
+                  </div>
+                ) : (
+                <>
                 {/* Grille de cartes */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16, marginBottom: 28 }}>
-                  {consumption.map((u, i) => (
+                  {consomFiltres.map((u, i) => (
                     <div key={u.user_id} style={{ ...card, padding: "20px 22px" }}>
 
                       {/* Avatar + infos */}
@@ -507,7 +591,7 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {consumption.map((u, i) => (
+                      {consomFiltres.map((u, i) => (
                         <tr key={u.user_id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent" }}>
                           <td style={{ padding: "12px 18px", fontSize: 13, fontWeight: 600, color: "#e8f0ff" }}>{u.username}</td>
                           {/* Rôle en jaune */}
@@ -524,6 +608,8 @@ export default function AdminPage() {
                     </tbody>
                   </table>
                 </div>
+                </>
+                )}
               </>
             )}
           </div>

@@ -1,11 +1,4 @@
-// ─── src/pages/VerniColorApp.jsx ─────────────────────────────────────────────
-// Composant racine — orchestrateur principal.
-//
-// MODIFICATION RBAC :
-//   handleLogin() sauvegarde maintenant le rôle dans localStorage
-//   pour que UploadPage (et les autres pages) puissent y accéder.
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import GlobalStyles       from "../components/GlobalStyles";
 import Background         from "../components/Background";
@@ -17,7 +10,20 @@ import HomePage            from "./HomePage";
 import UploadPage          from "./UploadPage";
 import DashboardPage       from "./DashboardPage";
 import InvoiceVerification from "./InvoiceVerification";
-import AdminPage from "./AdminPage"; 
+import AdminPage from "./AdminPage";
+
+// ══════════════════════════════════════════════════════════════
+// RBAC — table des permissions par page
+// Clé = nom de la page, valeur = liste des rôles autorisés
+// ══════════════════════════════════════════════════════════════
+const PAGE_ROLES = {
+  dashboard : ["Comptable"],
+  admin     : ["Administrateur Système", "Administrateur"],
+  // ✅ CORRECTION : "Utilisateur" ajouté pour accéder à la page upload
+  upload    : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
+  home      : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
+};
+
 export default function VerniColorApp() {
 
   const [page,             setPage]             = useState("login");
@@ -25,20 +31,42 @@ export default function VerniColorApp() {
   const [uploadedInvoices, setUploadedInvoices] = useState([]);
   const [ocrData,          setOcrData]          = useState(null);
 
-  // ── Login : sauvegarde rôle + username dans localStorage ─────────────────
-  // Le backend renvoie : { username, role, token? }
-  // On sauvegarde le rôle pour que UploadPage puisse faire :
-  //   const role = localStorage.getItem("role");
-  const handleLogin = (name, role) => {
-  setUsername(name);
-  localStorage.setItem("username", name);
-  localStorage.setItem("role", role || "Utilisateur");
-  // Admin → va directement sur admin dashboard
-  const isAdmin = ["Administrateur Système", "Administrateur"].includes(role);
-  setPage(isAdmin ? "admin" : "home");   // ← MODIFICATION
-};
+  // ── Toast de permission refusée ───────────────────────────
+  const [permToast, setPermToast] = useState(null);
 
-  // ── Logout : nettoyage du localStorage ───────────────────────────────────
+  const showPermToast = (msg) => {
+    setPermToast(msg);
+    setTimeout(() => setPermToast(null), 3500);
+  };
+
+  // ── Navigation protégée ───────────────────────────────────
+  const goTo = (targetPage) => {
+    const role        = localStorage.getItem("role") || "";
+    const allowedRoles = PAGE_ROLES[targetPage];
+
+    if (!allowedRoles) {
+      setPage(targetPage);
+      return;
+    }
+
+    if (allowedRoles.includes(role)) {
+      setPage(targetPage);
+    } else {
+      showPermToast(`Accès refusé`);
+      setPage("home");
+    }
+  };
+
+  // ── Login ─────────────────────────────────────────────────
+  const handleLogin = (name, role) => {
+    setUsername(name);
+    localStorage.setItem("username", name);
+    localStorage.setItem("role", role || "Utilisateur");
+    const isAdmin = ["Administrateur Système", "Administrateur"].includes(role);
+    setPage(isAdmin ? "admin" : "home");
+  };
+
+  // ── Logout ────────────────────────────────────────────────
   const handleLogout = () => {
     localStorage.removeItem("username");
     localStorage.removeItem("role");
@@ -68,19 +96,43 @@ export default function VerniColorApp() {
       <Background />
       <Orbs />
 
+      {/* ── Toast permission refusée ──────────────────────── */}
+      {permToast && (
+        <div style={{
+          position  : "fixed", bottom: 24, left: "50%",
+          transform : "translateX(-50%)",
+          zIndex    : 9999,
+          padding   : "12px 20px",
+          borderRadius: 12, fontSize: 13, fontWeight: 500,
+          background: "rgba(248,113,113,0.15)",
+          border    : "1px solid rgba(248,113,113,0.4)",
+          color     : "#f87171",
+          display   : "flex", alignItems: "center", gap: 8,
+          animation : "fade-in 0.3s ease",
+          whiteSpace: "nowrap",
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <rect x="3" y="11" width="18" height="11" rx="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          {permToast}
+        </div>
+      )}
+
       {page !== "login" && (
         <>
           <CornerBadge />
-          <TopNav page={page} setPage={setPage} user={username} onLogout={handleLogout} />
+          <TopNav page={page} setPage={goTo} user={username} onLogout={handleLogout} />
         </>
       )}
 
       <div key={page} className="page-enter">
         {page === "login"        && <LoginPage onLogin={handleLogin} />}
-        {page === "home"         && <HomePage setPage={setPage} username={username} uploadedInvoices={uploadedInvoices} />}
+        {page === "home"         && <HomePage setPage={goTo} username={username} uploadedInvoices={uploadedInvoices} />}
         {page === "upload"       && <UploadPage onUploaded={handleUploaded} onOcrDone={handleOcrDone} />}
         {page === "dashboard"    && <DashboardPage />}
-        {page === "admin" && <AdminPage />}   
+        {page === "admin"        && <AdminPage />}
         {page === "verification" && (
           <InvoiceVerification
             ocrData={ocrData}
