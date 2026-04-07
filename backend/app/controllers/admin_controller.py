@@ -272,3 +272,166 @@ def get_summary(
         "rejected"      : int(row[4]),
         "total_users"   : int(users_row[0]),
     }
+    # ── À AJOUTER dans app/controllers/admin_controller.py ──────────────────────
+#
+# Endpoint : GET /admin/user-threshold/{username}
+# Retourne le seuil de remboursement d'un utilisateur selon son rôle.
+# Appelé par ExpenseVerificationPage.jsx pour afficher la vérification seuil.
+#
+# INSTALLATION : copier ces 2 fonctions dans admin_controller.py
+# (juste avant ou après le get_summary existant)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from fastapi        import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy     import text
+from typing         import Optional
+from app.database.connection import get_db
+
+# Le router est déjà défini dans admin_controller.py — ne pas le redéclarer
+# router = APIRouter()   ← DÉJÀ EXISTANT, ne pas dupliquer
+
+
+# ════════════════════════════════════════════════════════════════
+# GET /admin/user-threshold/{username}
+# Retourne le seuil max + consommation actuelle de l'utilisateur
+# ════════════════════════════════════════════════════════════════
+
+@router.get("/user-threshold/{username}")
+def get_user_threshold(
+    username : str,
+    db       : Session = Depends(get_db),
+):
+    """
+    Retourne les informations de seuil pour un utilisateur donné.
+    Utilisé par ExpenseVerificationPage pour afficher :
+      - seuil max autorisé
+      - seuil d'auto-approbation
+      - consommation du mois en cours
+      - statut estimé selon le montant
+    """
+    # 1. Trouver l'utilisateur (par username ou email)
+    user = db.execute(text("""
+        SELECT id, username, role, email
+        FROM users
+        WHERE username = :u OR email = :u
+        LIMIT 1
+    """), {"u": username}).fetchone()
+
+    if not user:
+        raise HTTPException(404, f"Utilisateur '{username}' introuvable.")
+
+    user_id, user_name, role, email = user
+
+    # 2. Trouver le seuil correspondant à son rôle
+    threshold = db.execute(text("""
+        SELECT id, role_name, max_amount_tnd, auto_approve_below_tnd, is_active
+        FROM expense_thresholds
+        WHERE role_name = :role AND is_active = TRUE
+        LIMIT 1
+    """), {"role": role}).fetchone()
+
+    if not threshold:
+        # Pas de seuil configuré pour ce rôle → retourner des valeurs par défaut
+        return {
+            "user_id"               : user_id,
+            "username"              : user_name,
+            "role"                  : role,
+            "threshold_found"       : False,
+            "max_amount_tnd"        : 0.0,
+            "auto_approve_below_tnd": 0.0,
+            "consumed_this_month"   : 0.0,
+            "remaining"             : 0.0,
+            "message"               : f"Aucun seuil configuré pour le rôle '{role}'."
+        }
+
+    max_amount  = float(threshold[2])
+    auto_approve = float(threshold[3] or 0)
+
+    # 3. Calcul de la consommation du mois en cours
+    consumed_row = db.execute(text("""
+        SELECT COALESCE(SUM(total_amount_tnd), 0) AS total
+        FROM expense_receipts
+        WHERE submitted_by = :uid
+          AND status IN ('auto_approved', 'validated', 'pending')
+          AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM NOW())
+          AND EXTRACT(YEAR  FROM created_at) = EXTRACT(YEAR  FROM NOW())
+    """), {"uid": user_id}).fetchone()
+
+    consumed      = float(consumed_row[0]) if consumed_row else 0.0
+    remaining     = max(0.0, max_amount - consumed)
+
+    return {
+        "user_id"               : user_id,
+        "username"              : user_name,
+        "role"                  : role,
+        "threshold_found"       : True,
+        "threshold_id"          : threshold[0],
+        "max_amount_tnd"        : max_amount,
+        "auto_approve_below_tnd": auto_approve,
+        "consumed_this_month"   : round(consumed, 3),
+        "remaining"             : round(remaining, 3),
+        "threshold_active"      : bool(threshold[4]),
+        "message"               : f"Seuil pour le rôle '{role}' : {max_amount} TND max."
+    }
+
+
+# ════════════════════════════════════════════════════════════════
+# POST /admin/user-threshold/check
+# Vérifie si un montant dépasse le seuil AVANT sauvegarde
+# (optionnel — la vérification est aussi faite côté React)
+# ════════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel
+
+class ThresholdCheckPayload(BaseModel):
+    username    : str
+    amount_tnd  : float
+    currency    : str = "TND"
+
+@router.post("/user-threshold/check")
+def check_threshold(
+    payload : ThresholdCheckPayload,
+    db      : Session = Depends(get_db),
+):
+    """
+    Vérifie côté backend si un montant est dans les limites.
+    Retourne le statut : auto_approved | pending | auto_rejected
+    """
+    user = db.execute(text("""
+        SELECT id, role FROM users WHERE username = :u OR email = :u LIMIT 1
+    """), {"u": payload.username}).fetchone()
+
+    if not user:
+        raise HTTPException(404, "Utilisateur introuvable.")
+
+    threshold = db.execute(text("""
+        SELECT max_amount_tnd, auto_approve_below_tnd
+        FROM expense_thresholds
+        WHERE role_name = :role AND is_active = TRUE LIMIT 1
+    """), {"role": user[1]}).fetchone()
+
+    if not threshold:
+        return {"status": "pending", "message": "Pas de seuil — approbation manuelle requise."}
+
+    max_a  = float(threshold[0])
+    auto_a = float(threshold[1] or 0)
+    amount = payload.amount_tnd
+
+    if amount > max_a:
+        status  = "auto_rejected"
+        message = f"Montant {amount:.3f} TND dépasse le plafond {max_a:.3f} TND."
+    elif amount <= auto_a:
+        status  = "auto_approved"
+        message = f"Montant {amount:.3f} TND en dessous du seuil d'auto-approbation {auto_a:.3f} TND."
+    else:
+        status  = "pending"
+        message = f"Montant {amount:.3f} TND nécessite une approbation manuelle."
+
+    return {
+        "status"          : status,
+        "amount_tnd"      : amount,
+        "max_amount_tnd"  : max_a,
+        "auto_approve_tnd": auto_a,
+        "message"         : message,
+    }

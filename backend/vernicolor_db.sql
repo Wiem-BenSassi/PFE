@@ -160,6 +160,17 @@ INSERT INTO expense_thresholds
 ('stagiaire 1',            100.000,   30.000),
 ('stagiaire 2',            100.000,   30.000);
 
+
+DELETE FROM expense_thresholds;
+
+INSERT INTO expense_thresholds
+(role_name, max_amount_tnd, auto_approve_below_tnd)
+VALUES
+('Administrateur', 5000.000, 1000.000),
+('Administrateur Système', 500.000, 100.000),
+('Comptable', 1000.000, 200.000),
+('Utilisateur', 100.000, 30.000);
+
 -- HOW IT WORKS IN FASTAPI:
 -- 1. Receipt submitted: total_amount_tnd = 45 TND, role = 'employee'
 -- 2. SELECT * FROM expense_thresholds WHERE role_name = 'employee'

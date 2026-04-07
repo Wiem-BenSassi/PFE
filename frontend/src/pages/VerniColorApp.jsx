@@ -1,3 +1,7 @@
+// ─── src/pages/VerniColorApp.jsx ─────────────────────────────────────────────
+// MODIFICATION : ajout du flux "expense" →  ExpenseVerificationPage
+// Tout le reste est identique à la version précédente.
+
 import { useState, useEffect } from "react";
 
 import GlobalStyles       from "../components/GlobalStyles";
@@ -5,23 +9,21 @@ import Background         from "../components/Background";
 import Orbs               from "../components/Orbs";
 import TopNav, { CornerBadge } from "../components/TopNav";
 
-import LoginPage           from "./LoginPage";
-import HomePage            from "./HomePage";
-import UploadPage          from "./UploadPage";
-import DashboardPage       from "./DashboardPage";
-import InvoiceVerification from "./InvoiceVerification";
-import AdminPage from "./AdminPage";
+import LoginPage                from "./LoginPage";
+import HomePage                 from "./HomePage";
+import UploadPage               from "./UploadPage";
+import DashboardPage            from "./DashboardPage";
+import InvoiceVerification      from "./InvoiceVerification";
+import ExpenseVerificationPage  from "./Expenseverificationpage";  // ← NOUVEAU
+import AdminPage                from "./AdminPage";
 
-// ══════════════════════════════════════════════════════════════
-// RBAC — table des permissions par page
-// Clé = nom de la page, valeur = liste des rôles autorisés
-// ══════════════════════════════════════════════════════════════
+// ── RBAC — permissions par page ──────────────────────────────────────────────
 const PAGE_ROLES = {
-  dashboard : ["Comptable"],
-  admin     : ["Administrateur Système", "Administrateur"],
-  // ✅ CORRECTION : "Utilisateur" ajouté pour accéder à la page upload
-  upload    : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
-  home      : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
+  dashboard            : ["Comptable"],
+  admin                : ["Administrateur Système", "Administrateur"],
+  upload               : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
+  home                 : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
+  // expense_verification : accessible à tous (pas de restriction de rôle)
 };
 
 export default function VerniColorApp() {
@@ -29,9 +31,14 @@ export default function VerniColorApp() {
   const [page,             setPage]             = useState("login");
   const [username,         setUsername]         = useState("Admin");
   const [uploadedInvoices, setUploadedInvoices] = useState([]);
+
+  // Données OCR facture fournisseur → InvoiceVerification
   const [ocrData,          setOcrData]          = useState(null);
 
-  // ── Toast de permission refusée ───────────────────────────
+  // Données OCR note de frais → ExpenseVerificationPage  ← NOUVEAU
+  const [expenseData,      setExpenseData]      = useState(null);
+
+  // Toast de permission refusée
   const [permToast, setPermToast] = useState(null);
 
   const showPermToast = (msg) => {
@@ -39,25 +46,24 @@ export default function VerniColorApp() {
     setTimeout(() => setPermToast(null), 3500);
   };
 
-  // ── Navigation protégée ───────────────────────────────────
+  // ── Navigation protégée ───────────────────────────────────────────────────
   const goTo = (targetPage) => {
-    const role        = localStorage.getItem("role") || "";
+    const role         = localStorage.getItem("role") || "";
     const allowedRoles = PAGE_ROLES[targetPage];
 
     if (!allowedRoles) {
       setPage(targetPage);
       return;
     }
-
     if (allowedRoles.includes(role)) {
       setPage(targetPage);
     } else {
-      showPermToast(`Accès refusé`);
+      showPermToast(`Accès refusé — page réservée à : ${allowedRoles.join(", ")}`);
       setPage("home");
     }
   };
 
-  // ── Login ─────────────────────────────────────────────────
+  // ── Login ─────────────────────────────────────────────────────────────────
   const handleLogin = (name, role) => {
     setUsername(name);
     localStorage.setItem("username", name);
@@ -66,7 +72,7 @@ export default function VerniColorApp() {
     setPage(isAdmin ? "admin" : "home");
   };
 
-  // ── Logout ────────────────────────────────────────────────
+  // ── Logout ────────────────────────────────────────────────────────────────
   const handleLogout = () => {
     localStorage.removeItem("username");
     localStorage.removeItem("role");
@@ -79,14 +85,31 @@ export default function VerniColorApp() {
     setUploadedInvoices(prev => [...prev, ...newFiles]);
   };
 
+  // ── Callback facture fournisseur : va vers InvoiceVerification ────────────
   const handleOcrDone = (data) => {
     setOcrData(data);
     setPage("verification");
   };
 
+  // ── Callback note de frais : va vers ExpenseVerificationPage ─────────────
+  // data = résultat complet de POST /receipts/upload
+  const handleExpenseOcrDone = (data) => {
+    setExpenseData(data);
+    setPage("expense_verification");   // ← nouvelle page
+  };
+
+  // ── Retour depuis vérification facture ────────────────────────────────────
   const handleVerificationBack    = () => setPage("upload");
   const handleVerificationConfirm = (corrected) => {
-    console.log("Verified invoice:", corrected);
+    console.log("Facture validée :", corrected);
+    setPage("home");
+  };
+
+  // ── Retour depuis vérification note de frais ──────────────────────────────
+  const handleExpenseBack    = () => setPage("upload");
+  const handleExpenseConfirm = (corrected) => {
+    console.log("Note de frais validée :", corrected);
+    setExpenseData(null);
     setPage("home");
   };
 
@@ -96,23 +119,16 @@ export default function VerniColorApp() {
       <Background />
       <Orbs />
 
-      {/* ── Toast permission refusée ──────────────────────── */}
+      {/* ── Toast permission ──────────────────────────────────────────────── */}
       {permToast && (
         <div style={{
-          position  : "fixed", bottom: 24, left: "50%",
-          transform : "translateX(-50%)",
-          zIndex    : 9999,
-          padding   : "12px 20px",
-          borderRadius: 12, fontSize: 13, fontWeight: 500,
-          background: "rgba(248,113,113,0.15)",
-          border    : "1px solid rgba(248,113,113,0.4)",
-          color     : "#f87171",
-          display   : "flex", alignItems: "center", gap: 8,
-          animation : "fade-in 0.3s ease",
-          whiteSpace: "nowrap",
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          zIndex: 9999, padding: "12px 20px", borderRadius: 12, fontSize: 13, fontWeight: 500,
+          background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.4)",
+          color: "#f87171", display: "flex", alignItems: "center", gap: 8,
+          animation: "fade-in 0.3s ease", whiteSpace: "nowrap",
         }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <rect x="3" y="11" width="18" height="11" rx="2"/>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
@@ -128,11 +144,28 @@ export default function VerniColorApp() {
       )}
 
       <div key={page} className="page-enter">
-        {page === "login"        && <LoginPage onLogin={handleLogin} />}
-        {page === "home"         && <HomePage setPage={goTo} username={username} uploadedInvoices={uploadedInvoices} />}
-        {page === "upload"       && <UploadPage onUploaded={handleUploaded} onOcrDone={handleOcrDone} />}
-        {page === "dashboard"    && <DashboardPage />}
-        {page === "admin"        && <AdminPage />}
+
+        {page === "login" && (
+          <LoginPage onLogin={handleLogin} />
+        )}
+
+        {page === "home" && (
+          <HomePage setPage={goTo} username={username} uploadedInvoices={uploadedInvoices} />
+        )}
+        {/* ← NOUVEAU prop */}
+        {page === "upload" && (
+          <UploadPage
+            onUploaded={handleUploaded}
+            onOcrDone={handleOcrDone}
+            onExpenseOcrDone={handleExpenseOcrDone}   
+          />
+        )}
+
+        {page === "dashboard" && <DashboardPage />}
+
+        {page === "admin" && <AdminPage />}
+
+        {/* ── Vérification facture fournisseur (inchangé) ─────────────────── */}
         {page === "verification" && (
           <InvoiceVerification
             ocrData={ocrData}
@@ -140,6 +173,16 @@ export default function VerniColorApp() {
             onConfirm={handleVerificationConfirm}
           />
         )}
+
+        {/* ── Vérification note de frais (NOUVEAU) ────────────────────────── */}
+        {page === "expense_verification" && (
+          <ExpenseVerificationPage
+            receiptData={expenseData}
+            onBack={handleExpenseBack}
+            onConfirm={handleExpenseConfirm}
+          />
+        )}
+
       </div>
 
       {page === "login" && (
