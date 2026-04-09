@@ -20,6 +20,7 @@ from app.controllers.invoice_controller import router as invoice_router
 from app.controllers.receipt_controller import router as receipt_router
 from app.controllers.admin_controller   import router as admin_router
 from auth.login                         import router as login_router
+from app.controllers.system_admin_controller import router as sysadmin_router
 
 app = FastAPI(
     title="Vernicolor Invoice API",
@@ -47,7 +48,7 @@ def root():
         "message": "Vernicolor API running ✅",
         "docs": "http://localhost:8000/docs"
     }
-
+app.include_router(sysadmin_router, prefix="/sysadmin", tags=["System Admin"])
 app.include_router(login_router,   prefix="/auth",     tags=["Authentication"])
 app.include_router(invoice_router, prefix="/invoices", tags=["Invoices"])
 app.include_router(receipt_router, prefix="/receipts", tags=["Expense Receipts"])

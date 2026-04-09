@@ -14,6 +14,7 @@ const TopNav = ({ page, setPage, user = "Admin", onLogout }) => (
     background: "rgba(6,10,20,0.88)", backdropFilter: "blur(18px)",
     borderBottom: "1px solid rgba(255,255,255,0.06)",
   }}>
+    
     {/* Logo — clique pour revenir à l'accueil */}
     <div
       style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
@@ -31,32 +32,41 @@ const TopNav = ({ page, setPage, user = "Admin", onLogout }) => (
     </div>
 
     {/* Liens de navigation — page active mise en surbrillance */}
-<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-  <button className={`nav-link ${page === "home" ? "active" : ""}`} onClick={() => setPage("home")}>
-    Home
-  </button>
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <button className={`nav-link ${page === "home" ? "active" : ""}`} onClick={() => setPage("home")}>
+        Home
+      </button>
 
-  <button className={`nav-link ${page === "upload" ? "active" : ""}`} onClick={() => setPage("upload")}>
-    Invoices
-  </button>
+      <button className={`nav-link ${page === "upload" ? "active" : ""}`} onClick={() => setPage("upload")}>
+        Invoices
+      </button>
 
-  <button className={`nav-link ${page === "dashboard" ? "active" : ""}`} onClick={() => setPage("dashboard")}>
-    Dashboard
-  </button>
+      <button className={`nav-link ${page === "dashboard" ? "active" : ""}`} onClick={() => setPage("dashboard")}>
+        Dashboard
+      </button>
 
-  {/* 🔐 Bouton Admin — visible uniquement pour Admin et Admin Système */}
-  {["Administrateur Système", "Administrateur"].includes(
-    localStorage.getItem("role")
-  ) && (
-    <button
-      className={`nav-link ${page === "admin" ? "active" : ""}`}
-      onClick={() => setPage("admin")}
-    >
-      Admin
-    </button>
-  )}
-</div>
+      {/* 🔐 Bouton Admin — visible pour Admin et Admin Système */}
+      {["Administrateur Système", "Administrateur"].includes(
+        localStorage.getItem("role")
+      ) && (
+        <button
+          className={`nav-link ${page === "admin" ? "active" : ""}`}
+          onClick={() => setPage("admin")}
+        >
+          Admin
+        </button>
+      )}
 
+      {/* 🛠️ Bouton Système — visible UNIQUEMENT pour Administrateur Système */}
+      {localStorage.getItem("role") === "Administrateur Système" && (
+        <button
+          className={`nav-link ${page === "sysadmin" ? "active" : ""}`}
+          onClick={() => setPage("sysadmin")}
+        >
+          Système
+        </button>
+      )}
+    </div>
 
     {/* Zone utilisateur : avatar + nom + bouton déconnexion */}
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -81,7 +91,6 @@ const TopNav = ({ page, setPage, user = "Admin", onLogout }) => (
 );
 
 // ── Badge logo coin haut-gauche ───────────────────────────────────────────────
-// Affiché en superposition quand l'utilisateur est connecté
 export const CornerBadge = () => (
   <div style={{
     position: "fixed", top: 20, left: 20, zIndex: 100,

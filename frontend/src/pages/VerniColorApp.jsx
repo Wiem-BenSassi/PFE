@@ -14,16 +14,17 @@ import HomePage                 from "./HomePage";
 import UploadPage               from "./UploadPage";
 import DashboardPage            from "./DashboardPage";
 import InvoiceVerification      from "./InvoiceVerification";
-import ExpenseVerificationPage  from "./Expenseverificationpage";  // ← NOUVEAU
+import ExpenseVerificationPage  from "./Expenseverificationpage";
 import AdminPage                from "./AdminPage";
+import SystemAdminPage          from "./SystemAdminPage";          // ← NOUVEAU
 
 // ── RBAC — permissions par page ──────────────────────────────────────────────
 const PAGE_ROLES = {
   dashboard            : ["Comptable"],
   admin                : ["Administrateur Système", "Administrateur"],
+  sysadmin             : ["Administrateur Système"],               // ← NOUVEAU
   upload               : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
   home                 : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
-  // expense_verification : accessible à tous (pas de restriction de rôle)
 };
 
 export default function VerniColorApp() {
@@ -163,7 +164,10 @@ export default function VerniColorApp() {
 
         {page === "dashboard" && <DashboardPage />}
 
-        {page === "admin" && <AdminPage />}
+        {page === "admin"    && <AdminPage />}
+
+        {/* ── Interface Administrateur Système (NOUVEAU) ───────────────── */}
+        {page === "sysadmin" && <SystemAdminPage />}
 
         {/* ── Vérification facture fournisseur (inchangé) ─────────────────── */}
         {page === "verification" && (
