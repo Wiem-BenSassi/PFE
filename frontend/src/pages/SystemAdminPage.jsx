@@ -8,31 +8,21 @@ import { useState, useEffect } from "react";
 
 const API = "http://127.0.0.1:8000/sysadmin";
 
-// ── Rôles disponibles dans le système ────────────────────────────────────────
+// ── Rôles disponibles dans le système (4 rôles uniquement) ──────────────────
 const ROLES_LIST = [
   "Administrateur Système",
   "Administrateur",
   "Comptable",
-  "Responsable Financière",
-  "Directeur Générale",
-  "Responsable IT",
-  "stagiaire 1",
-  "stagiaire 2",
   "Utilisateur",
 ];
 
-// ── Couleur par rôle ──────────────────────────────────────────────────────────
+// ── Couleurs : uniquement jaune, vert et bleu ─────────────────────────────────
 const roleColor = (role) => ({
-  "Administrateur Système"  : "#f87171",
-  "Administrateur"          : "#8b5cf6",
-  "Comptable"               : "#10b981",
-  "Responsable Financière"  : "#ec4899",
-  "Directeur Générale"      : "#ef4444",
-  "Responsable IT"          : "#3b82f6",
-  "stagiaire 1"             : "#f59e0b",
-  "stagiaire 2"             : "#f59e0b",
-  "Utilisateur"             : "#64748b",
-}[role] || "#64748b");
+  "Administrateur Système" : "#3b82f6",   // bleu
+  "Administrateur"         : "#facc15",   // jaune
+  "Comptable"              : "#10b981",   // vert
+  "Utilisateur"            : "#3b82f6",   // bleu
+}[role] || "#3b82f6");
 
 // ── Helper fetch ──────────────────────────────────────────────────────────────
 const apiFetch = (url, opts = {}) =>
@@ -76,11 +66,11 @@ const ConfirmModal = ({ isOpen, message, onConfirm, onCancel }) => {
     }} onClick={onCancel}>
       <div style={{
         background: "linear-gradient(145deg,#0d1627,#0a1120)",
-        border: "1px solid rgba(248,113,113,0.35)",
+        border: "1px solid rgba(37,99,235,0.35)",
         borderRadius: 20, padding: "32px 36px", maxWidth: 380, width: "90%",
         textAlign: "center",
       }} onClick={e => e.stopPropagation()}>
-        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22 }}>
+        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.3)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22 }}>
           ⚠
         </div>
         <p style={{ fontFamily: "'Syne',sans-serif", fontSize: 17, fontWeight: 700, color: "#e8f0ff", marginBottom: 8 }}>
@@ -93,7 +83,7 @@ const ConfirmModal = ({ isOpen, message, onConfirm, onCancel }) => {
           <button onClick={onCancel} style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13, background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "#5a6e99", cursor: "pointer", fontFamily: "'Syne',sans-serif", fontWeight: 600 }}>
             Annuler
           </button>
-          <button onClick={onConfirm} style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13, background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.4)", color: "#f87171", cursor: "pointer", fontFamily: "'Syne',sans-serif", fontWeight: 600 }}>
+          <button onClick={onConfirm} style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13, background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.4)", color: "#60a5fa", cursor: "pointer", fontFamily: "'Syne',sans-serif", fontWeight: 600 }}>
             Supprimer
           </button>
         </div>
@@ -473,7 +463,7 @@ export default function SystemAdminPage() {
             Administration Système
           </p>
           <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 30, fontWeight: 800, color: "#e8f0ff", marginBottom: 6, letterSpacing: "-0.3px" }}>
-            Gestion <span style={{ color: "#f87171" }}>Système</span>
+            Gestion <span style={{ color: "#3b82f6" }}>Système</span>
           </h1>
           <p style={{ color: "#5a6e99", fontSize: 14 }}>
             Utilisateurs · Rôles · Seuils — accès exclusif Administrateur Système.
@@ -504,9 +494,9 @@ export default function SystemAdminPage() {
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               padding: "9px 20px", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-              border    : `1px solid ${tab === t.key ? "rgba(248,113,113,0.5)" : "rgba(255,255,255,0.07)"}`,
-              background: tab === t.key ? "rgba(248,113,113,0.1)" : "transparent",
-              color     : tab === t.key ? "#f87171" : "#5a6e99",
+              border    : `1px solid ${tab === t.key ? "rgba(37,99,235,0.5)" : "rgba(255,255,255,0.07)"}`,
+              background: tab === t.key ? "rgba(37,99,235,0.12)" : "transparent",
+              color     : tab === t.key ? "#60a5fa" : "#5a6e99",
             }}>
               {t.label}
             </button>
@@ -616,7 +606,7 @@ export default function SystemAdminPage() {
                             {/* Supprimer */}
                             <button
                               onClick={() => deleteUser(u)}
-                              style={{ padding: "5px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171", cursor: "pointer" }}
+                              style={{ padding: "5px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.25)", color: "#60a5fa", cursor: "pointer" }}
                             >
                               Supprimer
                             </button>
@@ -646,15 +636,10 @@ export default function SystemAdminPage() {
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
                 {[
-                  { role: "Administrateur Système",  desc: "Accès total : utilisateurs, rôles, seuils, analytics",  perms: ["Gestion utilisateurs", "Création seuils", "Dashboard", "Admin panel"] },
-                  { role: "Administrateur",          desc: "Gestion des seuils + analytics métier",                  perms: ["Modification seuils", "Dashboard", "Admin panel"] },
-                  { role: "Comptable",               desc: "Upload factures fournisseurs + dashboard financier",      perms: ["Upload factures", "Dashboard", "Notes de frais"] },
-                  { role: "Responsable Financière",  desc: "Validation des dépenses et suivi budgétaire",             perms: ["Notes de frais", "Validation"] },
-                  { role: "Directeur Générale",      desc: "Vue globale des opérations",                              perms: ["Notes de frais", "Vue globale"] },
-                  { role: "Responsable IT",          desc: "Accès technique limité",                                  perms: ["Notes de frais"] },
-                  { role: "stagiaire 1",             desc: "Accès minimal — notes de frais uniquement",              perms: ["Notes de frais"] },
-                  { role: "stagiaire 2",             desc: "Accès minimal — notes de frais uniquement",              perms: ["Notes de frais"] },
-                  { role: "Utilisateur",             desc: "Utilisateur standard — notes de frais",                  perms: ["Notes de frais"] },
+                  { role: "Administrateur Système", desc: "Accès total : utilisateurs, rôles, seuils, analytics", perms: ["Gestion utilisateurs", "Création seuils", "Dashboard", "Admin panel"] },
+                  { role: "Administrateur",         desc: "Gestion des seuils + analytics métier",                perms: ["Modification seuils", "Dashboard", "Admin panel"] },
+                  { role: "Comptable",              desc: "Upload factures fournisseurs + dashboard financier",    perms: ["Upload factures", "Dashboard", "Notes de frais"] },
+                  { role: "Utilisateur",            desc: "Utilisateur standard — notes de frais uniquement",     perms: ["Notes de frais"] },
                 ].map(({ role, desc, perms }) => {
                   const count = users.filter(u => u.role === role).length;
                   return (
@@ -710,8 +695,8 @@ export default function SystemAdminPage() {
         {tab === "thresholds" && (
           <div>
             {/* Note explicative */}
-            <div style={{ ...card, padding: "16px 20px", marginBottom: 20, borderLeft: "3px solid rgba(248,113,113,0.6)", borderRadius: "0 12px 12px 0" }}>
-              <p style={{ fontSize: 13, color: "#fca5a5", fontWeight: 500, marginBottom: 4 }}>
+            <div style={{ ...card, padding: "16px 20px", marginBottom: 20, borderLeft: "3px solid rgba(250,204,21,0.6)", borderRadius: "0 12px 12px 0" }}>
+              <p style={{ fontSize: 13, color: "#fde68a", fontWeight: 500, marginBottom: 4 }}>
                 ⚡ Création de seuils — Administrateur Système uniquement
               </p>
               <p style={{ fontSize: 12, color: "#5a6e99", lineHeight: 1.5 }}>
@@ -775,11 +760,11 @@ export default function SystemAdminPage() {
                             <span style={{
                               display: "inline-flex", alignItems: "center", gap: 5,
                               padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600,
-                              background: t.is_active ? "rgba(16,185,129,0.12)" : "rgba(248,113,113,0.12)",
-                              color: t.is_active ? "#10b981" : "#f87171",
-                              border: `1px solid ${t.is_active ? "rgba(16,185,129,0.3)" : "rgba(248,113,113,0.3)"}`,
+                              background: t.is_active ? "rgba(16,185,129,0.12)" : "rgba(37,99,235,0.12)",
+                              color: t.is_active ? "#10b981" : "#60a5fa",
+                              border: `1px solid ${t.is_active ? "rgba(16,185,129,0.3)" : "rgba(37,99,235,0.3)"}`,
                             }}>
-                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: t.is_active ? "#10b981" : "#f87171" }} />
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: t.is_active ? "#10b981" : "#3b82f6" }} />
                               {t.is_active ? "Actif" : "Inactif"}
                             </span>
                           </td>
@@ -793,7 +778,7 @@ export default function SystemAdminPage() {
                           <td style={{ padding: "14px 20px" }}>
                             <button
                               onClick={() => deleteThreshold(t)}
-                              style={{ padding: "5px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171", cursor: "pointer" }}
+                              style={{ padding: "5px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.25)", color: "#60a5fa", cursor: "pointer" }}
                             >
                               Supprimer
                             </button>
