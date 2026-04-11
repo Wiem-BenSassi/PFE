@@ -1,4 +1,4 @@
-# main.py — ajout du budget_router sur /budget
+# main.py — VERSION CORS CORRIGÉE
 import sys, os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -13,15 +13,26 @@ from app.controllers.invoice_controller      import router as invoice_router
 from app.controllers.receipt_controller      import router as receipt_router
 from app.controllers.admin_controller        import router as admin_router
 from app.controllers.system_admin_controller import router as sysadmin_router
-from app.controllers.budget_controller       import router as budget_router   # ← NOUVEAU
+from app.controllers.budget_controller       import router as budget_router
 from auth.login                              import router as login_router
 
 app = FastAPI(title="Vernicolor Invoice API", version="1.0.0")
 
-app.add_middleware(CORSMiddleware,
-    allow_origins=["http://localhost:3000","http://127.0.0.1:3000",
-                   "http://localhost:3001","http://127.0.0.1:3001"],
-    allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+# ── CORS — toutes les combinaisons localhost / 127.0.0.1 ─────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://localhost",
+        "http://127.0.0.1",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 @app.get("/")
@@ -33,4 +44,4 @@ app.include_router(login_router,    prefix="/auth",     tags=["Authentication"])
 app.include_router(invoice_router,  prefix="/invoices", tags=["Invoices"])
 app.include_router(receipt_router,  prefix="/receipts", tags=["Expense Receipts"])
 app.include_router(admin_router,    prefix="/admin",    tags=["Admin"])
-app.include_router(budget_router,   prefix="/budget",   tags=["Budget"])   # ← NOUVEAU
+app.include_router(budget_router,   prefix="/budget",   tags=["Budget"])

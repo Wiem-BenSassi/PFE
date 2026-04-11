@@ -18,14 +18,13 @@ import InvoiceVerification      from "./InvoiceVerification";
 import ExpenseVerificationPage  from "./Expenseverificationpage";
 import AdminPage                from "./AdminPage";
 import SystemAdminPage          from "./SystemAdminPage";
-import BudgetAdminPage          from "./BudgetAdminPage";   // ← AJOUTÉ
+
 
 // ── RBAC — permissions par page ──────────────────────────────────────────────
 const PAGE_ROLES = {
   dashboard            : ["Comptable"],
   admin                : ["Administrateur Système", "Administrateur"],
   sysadmin             : ["Administrateur Système"],
-  budget_admin         : ["Administrateur Système", "Administrateur"],   // ← AJOUTÉ
   upload               : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
   home                 : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
 };
@@ -172,9 +171,6 @@ export default function VerniColorApp() {
 
         {/* ── Interface Administrateur Système ─────────────────────────── */}
         {page === "sysadmin" && <SystemAdminPage />}
-
-        {/* ── Gestion des seuils financiers (NOUVEAU) ──────────────────── */}
-        {page === "budget_admin" && <BudgetAdminPage />}
 
         {/* ── Vérification facture fournisseur ────────────────────────── */}
         {page === "verification" && (
