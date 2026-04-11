@@ -1,549 +1,434 @@
 # ─── app/controllers/budget_controller.py ────────────────────────────────────
 #
-# MODULE : Gestion des seuils financiers par utilisateur
+# MODULE BUDGET — Adapté au schéma réel de la base de données Vernicolor.
 #
-# ENDPOINTS :
-#   GET    /budget/me                     → mon budget (utilisateur connecté)
-#   GET    /budget/users                  → tous les budgets (admin)
-#   GET    /budget/users/{user_id}        → budget d'un utilisateur précis (admin)
-#   POST   /budget/users/{user_id}        → créer/remplacer le seuil (admin)
-#   PATCH  /budget/users/{user_id}        → modifier le seuil (admin)
-#   DELETE /budget/users/{user_id}        → supprimer le seuil personnalisé (admin)
-#   GET    /budget/alerts                 → historique des alertes (admin)
-#   POST   /budget/alerts/{id}/ack        → acquitter une alerte (admin)
-#   POST   /budget/check                  → vérifier un montant avant upload
+# TABLES EXISTANTES UTILISÉES :
+#   users               → id, username, email, role, is_active
+#   expense_receipts    → submitted_by, total_amount_tnd, status, created_at
+#   expense_thresholds  → role_name, max_amount_tnd, auto_approve_below_tnd, is_active
 #
-# INTÉGRATION :
-#   Ajouter dans main.py :
-#     from app.controllers.budget_controller import router as budget_router
-#     app.include_router(budget_router, prefix="/budget", tags=["Budget"])
+# TABLES CRÉÉES PAR CE MODULE :
+#   user_budgets   → seuil personnalisé par user (prioritaire sur expense_thresholds)
+#   budget_alerts  → historique des alertes 80% / 90% / dépassement
+#
+# ⚠️  RÈGLE MÉTIER FONDAMENTALE ⚠️
+#   Le seuil s'applique UNIQUEMENT aux expense_receipts (notes de frais).
+#   supplier_invoices est totalement EXCLU des calculs de seuil.
+#
+# SEUILS CONFIGURÉS DANS VOTRE DB (expense_thresholds) :
+#   Administrateur          : 5 000 TND  (auto-approve : 1 000)
+#   Administrateur Système  :   500 TND  (auto-approve :   100)
+#   Comptable               : 1 000 TND  (auto-approve :   200)
+#   Utilisateur             :   100 TND  (auto-approve :    30)
 
-from fastapi        import APIRouter, Depends, HTTPException, Query
+from fastapi        import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from sqlalchemy     import text
 from pydantic       import BaseModel
 from typing         import Optional
-from datetime       import datetime
 
 from app.database.connection import get_db
 from auth.rbac               import get_current_user, ROLES
 
 router = APIRouter()
 
-# ── Rôles autorisés pour la gestion des budgets ───────────────────────────────
 ADMIN_ROLES = [ROLES.ADMIN_SYSTEME, ROLES.ADMIN_METIER]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MODÈLES PYDANTIC
+# INIT TABLES
 # ══════════════════════════════════════════════════════════════════════════════
 
-class BudgetCreate(BaseModel):
-    """Payload pour créer ou remplacer le seuil d'un utilisateur."""
-    seuil_max    : float            # Plafond maximum en TND (ex: 100000)
-    period_type  : str = "monthly"  # 'monthly' | 'annual'
-    notes        : Optional[str] = None
-
-
-class BudgetUpdate(BaseModel):
-    """Payload pour modifier partiellement le seuil (tous champs optionnels)."""
-    seuil_max    : Optional[float] = None
-    period_type  : Optional[str]  = None
-    notes        : Optional[str]  = None
-
-
-class BudgetCheckPayload(BaseModel):
-    """Vérifie si un montant peut être soumis sans dépasser le seuil."""
-    amount_tnd  : float
-    document_type: str = "expense"  # 'expense' | 'supplier_invoice'
+def ensure_budget_tables(db: Session):
+    """Crée user_budgets et budget_alerts si absentes."""
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS user_budgets (
+            id          SERIAL PRIMARY KEY,
+            user_id     INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            seuil_max   NUMERIC(14,3) NOT NULL,
+            period_type VARCHAR(20) NOT NULL DEFAULT 'monthly',
+            notes       TEXT,
+            created_by  INTEGER REFERENCES users(id),
+            created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS budget_alerts (
+            id           SERIAL PRIMARY KEY,
+            user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            alert_type   VARCHAR(30) NOT NULL,
+            amount_tnd   NUMERIC(14,3),
+            seuil        NUMERIC(14,3),
+            pct_used     NUMERIC(6,2),
+            acknowledged BOOLEAN NOT NULL DEFAULT FALSE,
+            ack_by       INTEGER REFERENCES users(id),
+            created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """))
+    db.commit()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# HELPER : lire le budget d'un utilisateur depuis la vue v_user_budget_status
+# HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _get_budget_row(user_id: int, db: Session) -> dict:
-    """
-    Lit les données de budget depuis la vue v_user_budget_status.
-    Inclut : seuil_max, total_depense, solde_restant, pct_utilise.
-    """
-    row = db.execute(text("""
-        SELECT
-            user_id, username, email, role,
-            seuil_max,
-            depenses_receipts,
-            depenses_invoices,
-            total_depense,
-            solde_restant,
-            pct_utilise,
-            seuil_source,
-            budget_id,
-            budget_notes
-        FROM v_user_budget_status
-        WHERE user_id = :uid
-    """), {"uid": user_id}).fetchone()
-
-    if not row:
-        raise HTTPException(404, f"Utilisateur #{user_id} introuvable.")
-
-    seuil_max     = float(row[4])
-    total_depense = float(row[7])
-    solde_restant = float(row[8])
-    pct_utilise   = float(row[9])
-
-    # Calcul du statut d'alerte
-    if pct_utilise >= 100:
-        alert_status = "exceeded"
-        alert_color  = "#f87171"   # rouge
-    elif pct_utilise >= 90:
-        alert_status = "warning_90"
-        alert_color  = "#f59e0b"   # orange foncé
-    elif pct_utilise >= 80:
-        alert_status = "warning_80"
-        alert_color  = "#f59e0b"   # orange
+def _resolve_user(x_username: Optional[str], db: Session) -> tuple:
+    if not x_username:
+        row = db.execute(text(
+            "SELECT id, username, role, email FROM users WHERE is_active=TRUE ORDER BY id LIMIT 1"
+        )).fetchone()
     else:
-        alert_status = "ok"
-        alert_color  = "#10b981"   # vert
-
-    return {
-        "user_id"           : row[0],
-        "username"          : row[1],
-        "email"             : row[2],
-        "role"              : row[3],
-        "seuil_max"         : seuil_max,
-        "depenses_receipts" : float(row[5]),
-        "depenses_invoices" : float(row[6]),
-        "total_depense"     : round(total_depense, 3),
-        "solde_restant"     : round(solde_restant, 3),
-        "pct_utilise"       : round(pct_utilise, 2),
-        "seuil_source"      : row[10],   # 'user' ou 'role'
-        "budget_id"         : row[11],
-        "budget_notes"      : row[12],
-        "alert_status"      : alert_status,
-        "alert_color"       : alert_color,
-        "is_blocked"        : pct_utilise >= 100,   # upload bloqué si dépassé
-    }
+        row = db.execute(text(
+            "SELECT id, username, role, email FROM users WHERE username=:u OR email=:u LIMIT 1"
+        ), {"u": x_username}).fetchone()
+    if not row:
+        raise HTTPException(404, "Utilisateur introuvable.")
+    return row[0], row[1], row[2], row[3]
 
 
-# ── Helper : générer une alerte si seuil franchi ─────────────────────────────
-def _maybe_create_alert(user_id: int, pct: float, total: float, seuil: float,
-                        document_id: Optional[int], db: Session):
+def _get_seuil(user_id: int, role: str, db: Session) -> tuple:
     """
-    Crée une alerte dans budget_alerts si le pourcentage atteint un seuil critique.
-    Ne duplique pas les alertes du même type pour le même mois.
+    Retourne (seuil_max, source).
+    Priorité : user_budgets > expense_thresholds > fallback 100 000
     """
-    if pct < 80:
-        return
+    # 1. Seuil personnalisé (user_budgets)
+    r = db.execute(text(
+        "SELECT seuil_max FROM user_budgets WHERE user_id=:uid LIMIT 1"
+    ), {"uid": user_id}).fetchone()
+    if r:
+        return float(r[0]), "user"
 
-    alert_type = (
-        "exceeded"    if pct >= 100 else
-        "warning_90"  if pct >= 90  else
-        "warning_80"
-    )
+    # 2. Seuil par rôle (expense_thresholds — votre table existante)
+    r = db.execute(text("""
+        SELECT max_amount_tnd FROM expense_thresholds
+        WHERE role_name=:role AND is_active=TRUE LIMIT 1
+    """), {"role": role}).fetchone()
+    if r:
+        return float(r[0]), "role"
 
-    # Vérifie si cette alerte n'existe pas déjà ce mois-ci
-    existing = db.execute(text("""
-        SELECT id FROM budget_alerts
-        WHERE user_id    = :uid
-          AND alert_type = :atype
+    return 100_000.0, "default"
+
+
+def _total_expenses_this_month(user_id: int, db: Session) -> float:
+    """
+    ⚠️ expense_receipts SEULEMENT — supplier_invoices EXCLU.
+    Somme des notes de frais validées/en attente du mois courant.
+    """
+    r = db.execute(text("""
+        SELECT COALESCE(SUM(total_amount_tnd), 0)
+        FROM expense_receipts
+        WHERE submitted_by = :uid
+          AND status IN ('pending', 'validated', 'auto_approved')
           AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM NOW())
           AND EXTRACT(YEAR  FROM created_at) = EXTRACT(YEAR  FROM NOW())
+    """), {"uid": user_id}).fetchone()
+    return float(r[0]) if r else 0.0
+
+
+def _total_invoices_this_month(user_id: int, db: Session) -> float:
+    """Factures fournisseur du mois — AFFICHAGE INFORMATIF UNIQUEMENT, hors calcul seuil."""
+    r = db.execute(text("""
+        SELECT COALESCE(SUM(si.total_ttc_tnd), 0)
+        FROM supplier_invoices si
+        JOIN documents d ON d.id = si.document_id
+        WHERE d.uploaded_by = :uid
+          AND si.status IN ('pending', 'validated')
+          AND EXTRACT(MONTH FROM si.created_at) = EXTRACT(MONTH FROM NOW())
+          AND EXTRACT(YEAR  FROM si.created_at) = EXTRACT(YEAR  FROM NOW())
+    """), {"uid": user_id}).fetchone()
+    return float(r[0]) if r else 0.0
+
+
+def _alert_level(pct: float) -> str:
+    if pct >= 100: return "exceeded"
+    if pct >= 90:  return "warning_90"
+    if pct >= 80:  return "warning_80"
+    return "ok"
+
+
+def _save_alert(user_id: int, level: str, amount: float, seuil: float, pct: float, db: Session):
+    if level == "ok":
+        return
+    exists = db.execute(text("""
+        SELECT 1 FROM budget_alerts
+        WHERE user_id=:uid AND alert_type=:t
+          AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())
+          AND EXTRACT(YEAR  FROM created_at)=EXTRACT(YEAR  FROM NOW())
         LIMIT 1
-    """), {"uid": user_id, "atype": alert_type}).fetchone()
+    """), {"uid": user_id, "t": level}).fetchone()
+    if not exists:
+        db.execute(text("""
+            INSERT INTO budget_alerts (user_id, alert_type, amount_tnd, seuil, pct_used)
+            VALUES (:uid, :t, :a, :s, :p)
+        """), {"uid": user_id, "t": level, "a": round(amount, 3),
+               "s": round(seuil, 3), "p": round(pct, 2)})
+        db.commit()
 
-    if existing:
-        return   # alerte déjà créée ce mois pour ce seuil
 
-    db.execute(text("""
-        INSERT INTO budget_alerts
-            (user_id, alert_type, amount_at_alert, seuil_at_alert, pct_used, document_id)
-        VALUES
-            (:uid, :atype, :amount, :seuil, :pct, :did)
-    """), {
-        "uid"   : user_id,
-        "atype" : alert_type,
-        "amount": round(total, 3),
-        "seuil" : round(seuil, 3),
-        "pct"   : round(pct, 2),
-        "did"   : document_id,
-    })
-    db.commit()
+def _build_budget(user_id: int, username: str, role: str, email: str, db: Session) -> dict:
+    seuil_max, seuil_source = _get_seuil(user_id, role, db)
+
+    # ⚠️ NOTES DE FRAIS SEULEMENT → calcul du seuil
+    total_receipts = _total_expenses_this_month(user_id, db)
+    # FACTURES FOURNISSEUR → informatif, hors seuil
+    total_invoices = _total_invoices_this_month(user_id, db)
+
+    total_depense = total_receipts
+    solde_restant = max(0.0, seuil_max - total_depense)
+    pct           = (total_depense / seuil_max * 100) if seuil_max > 0 else 0.0
+    is_blocked    = total_depense >= seuil_max
+    level         = _alert_level(pct)
+
+    _save_alert(user_id, level, total_depense, seuil_max, pct, db)
+
+    override = db.execute(text(
+        "SELECT id, notes FROM user_budgets WHERE user_id=:uid LIMIT 1"
+    ), {"uid": user_id}).fetchone()
+
+    return {
+        "user_id"          : user_id,
+        "username"         : username,
+        "role"             : role,
+        "email"            : email,
+        "seuil_max"        : round(seuil_max, 3),
+        "seuil_source"     : seuil_source,
+        # ⚠️ total_depense = notes de frais uniquement
+        "total_depense"    : round(total_depense, 3),
+        "solde_restant"    : round(solde_restant, 3),
+        "pct_utilise"      : round(pct, 2),
+        "is_blocked"       : is_blocked,
+        "depenses_receipts": round(total_receipts, 3),
+        "depenses_invoices": round(total_invoices, 3),  # hors calcul
+        "alert_status"     : level,
+        "budget_id"        : override[0] if override else None,
+        "budget_notes"     : override[1] if override else None,
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GET /budget/me
-# Budget de l'utilisateur connecté
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/me")
 def get_my_budget(
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
+    db         : Session = Depends(get_db),
+    x_username : Optional[str] = Header(default=None, alias="X-Username"),
 ):
-    """
-    Retourne le budget de l'utilisateur connecté :
-      - seuil_max     : plafond autorisé
-      - total_depense : somme des dépenses du mois (notes de frais + factures)
-      - solde_restant : seuil_max - total_depense
-      - pct_utilise   : pourcentage d'utilisation
-      - alert_status  : 'ok' | 'warning_80' | 'warning_90' | 'exceeded'
-      - is_blocked    : True si upload bloqué (pct >= 100)
-    """
-    return _get_budget_row(current_user.id, db)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# GET /budget/users
-# Liste de tous les budgets (admin seulement)
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.get("/users")
-def get_all_budgets(
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
-):
-    """
-    Retourne le budget de tous les utilisateurs.
-    RÉSERVÉ aux administrateurs.
-    """
-    if current_user.role not in ADMIN_ROLES:
-        raise HTTPException(403, "Accès refusé — réservé aux administrateurs.")
-
-    rows = db.execute(text("""
-        SELECT
-            user_id, username, email, role,
-            seuil_max, total_depense, solde_restant, pct_utilise,
-            seuil_source, budget_id, budget_notes,
-            depenses_receipts, depenses_invoices
-        FROM v_user_budget_status
-        ORDER BY pct_utilise DESC, username ASC
-    """)).fetchall()
-
-    result = []
-    for row in rows:
-        pct = float(row[7])
-        result.append({
-            "user_id"           : row[0],
-            "username"          : row[1],
-            "email"             : row[2],
-            "role"              : row[3],
-            "seuil_max"         : float(row[4]),
-            "total_depense"     : round(float(row[5]), 3),
-            "solde_restant"     : round(float(row[6]), 3),
-            "pct_utilise"       : round(pct, 2),
-            "seuil_source"      : row[8],
-            "budget_id"         : row[9],
-            "budget_notes"      : row[10],
-            "depenses_receipts" : round(float(row[11]), 3),
-            "depenses_invoices" : round(float(row[12]), 3),
-            "alert_status"      : (
-                "exceeded"   if pct >= 100 else
-                "warning_90" if pct >= 90  else
-                "warning_80" if pct >= 80  else
-                "ok"
-            ),
-            "is_blocked"        : pct >= 100,
-        })
-
-    return {"total": len(result), "budgets": result}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# GET /budget/users/{user_id}
-# Budget d'un utilisateur précis (admin)
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.get("/users/{user_id}")
-def get_user_budget(
-    user_id      : int,
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
-):
-    """Budget détaillé d'un utilisateur. Admin ou l'utilisateur lui-même."""
-    if current_user.role not in ADMIN_ROLES and current_user.id != user_id:
-        raise HTTPException(403, "Accès refusé.")
-    return _get_budget_row(user_id, db)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# POST /budget/users/{user_id}
-# Créer ou remplacer le seuil d'un utilisateur
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.post("/users/{user_id}", status_code=201)
-def set_user_budget(
-    user_id      : int,
-    payload      : BudgetCreate,
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
-):
-    """
-    Crée ou remplace le seuil personnalisé d'un utilisateur.
-    RÉSERVÉ aux administrateurs.
-    """
-    if current_user.role not in ADMIN_ROLES:
-        raise HTTPException(403, "Accès refusé — réservé aux administrateurs.")
-
-    if payload.seuil_max <= 0:
-        raise HTTPException(400, "Le seuil doit être supérieur à 0.")
-
-    # Vérifie que l'utilisateur existe
-    user = db.execute(
-        text("SELECT id, username FROM users WHERE id = :uid"),
-        {"uid": user_id}
-    ).fetchone()
-    if not user:
-        raise HTTPException(404, f"Utilisateur #{user_id} introuvable.")
-
-    # Supprime l'ancien seuil s'il existe (remplace)
-    db.execute(
-        text("DELETE FROM user_budgets WHERE user_id = :uid"),
-        {"uid": user_id}
-    )
-
-    # Insère le nouveau seuil
-    db.execute(text("""
-        INSERT INTO user_budgets (user_id, seuil_max, period_type, notes, set_by, updated_at)
-        VALUES (:uid, :seuil, :period, :notes, :set_by, NOW())
-    """), {
-        "uid"    : user_id,
-        "seuil"  : payload.seuil_max,
-        "period" : payload.period_type,
-        "notes"  : payload.notes,
-        "set_by" : current_user.id,
-    })
-    db.commit()
-
-    return {
-        "status"   : "created",
-        "user_id"  : user_id,
-        "username" : user[1],
-        "seuil_max": payload.seuil_max,
-        "message"  : f"Seuil de {payload.seuil_max:.3f} TND défini pour {user[1]}.",
-    }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PATCH /budget/users/{user_id}
-# Modifier partiellement le seuil
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.patch("/users/{user_id}")
-def update_user_budget(
-    user_id      : int,
-    payload      : BudgetUpdate,
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
-):
-    """Modifie partiellement le seuil d'un utilisateur. Admin seulement."""
-    if current_user.role not in ADMIN_ROLES:
-        raise HTTPException(403, "Accès refusé.")
-
-    existing = db.execute(
-        text("SELECT id FROM user_budgets WHERE user_id = :uid"),
-        {"uid": user_id}
-    ).fetchone()
-
-    if not existing:
-        raise HTTPException(404, f"Aucun seuil personnalisé pour l'utilisateur #{user_id}. "
-                                  "Utilisez POST pour en créer un.")
-
-    updates = {}
-    if payload.seuil_max   is not None: updates["seuil_max"]   = payload.seuil_max
-    if payload.period_type is not None: updates["period_type"] = payload.period_type
-    if payload.notes       is not None: updates["notes"]       = payload.notes
-
-    if not updates:
-        raise HTTPException(400, "Aucun champ à modifier.")
-
-    set_clause = ", ".join(f"{k} = :{k}" for k in updates)
-    db.execute(
-        text(f"UPDATE user_budgets SET {set_clause}, updated_at = NOW() WHERE user_id = :uid"),
-        {**updates, "uid": user_id}
-    )
-    db.commit()
-
-    return {
-        "status"  : "updated",
-        "user_id" : user_id,
-        "message" : "Seuil mis à jour avec succès.",
-    }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# DELETE /budget/users/{user_id}
-# Supprimer le seuil personnalisé (revient au seuil de rôle)
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.delete("/budget/users/{user_id}")
-def delete_user_budget(
-    user_id      : int,
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
-):
-    """Supprime le seuil personnalisé — l'utilisateur revient au seuil de son rôle."""
-    if current_user.role not in ADMIN_ROLES:
-        raise HTTPException(403, "Accès refusé.")
-
-    db.execute(text("DELETE FROM user_budgets WHERE user_id = :uid"), {"uid": user_id})
-    db.commit()
-
-    return {
-        "status"  : "deleted",
-        "user_id" : user_id,
-        "message" : "Seuil personnalisé supprimé. Le seuil du rôle s'applique maintenant.",
-    }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# GET /budget/alerts
-# Historique des alertes (admin)
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.get("/alerts")
-def get_budget_alerts(
-    unread_only  : bool = Query(default=False),
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
-):
-    """
-    Retourne l'historique des alertes de dépassement.
-    Si unread_only=True → uniquement les alertes non acquittées.
-    Admin seulement.
-    """
-    if current_user.role not in ADMIN_ROLES:
-        raise HTTPException(403, "Accès refusé.")
-
-    where = "WHERE ba.acknowledged = FALSE" if unread_only else ""
-
-    rows = db.execute(text(f"""
-        SELECT
-            ba.id, ba.user_id, u.username, ba.alert_type,
-            ba.amount_at_alert, ba.seuil_at_alert, ba.pct_used,
-            ba.acknowledged, ba.created_at
-        FROM   budget_alerts ba
-        JOIN   users u ON u.id = ba.user_id
-        {where}
-        ORDER BY ba.created_at DESC
-        LIMIT 100
-    """)).fetchall()
-
-    return [
-        {
-            "alert_id"      : r[0],
-            "user_id"       : r[1],
-            "username"      : r[2],
-            "alert_type"    : r[3],
-            "amount"        : float(r[4]) if r[4] else 0,
-            "seuil"         : float(r[5]) if r[5] else 0,
-            "pct_used"      : float(r[6]) if r[6] else 0,
-            "acknowledged"  : bool(r[7]),
-            "created_at"    : str(r[8]),
-        }
-        for r in rows
-    ]
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# POST /budget/alerts/{alert_id}/ack
-# Acquitter une alerte
-# ══════════════════════════════════════════════════════════════════════════════
-
-@router.post("/alerts/{alert_id}/ack")
-def acknowledge_alert(
-    alert_id     : int,
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
-):
-    """Marque une alerte comme lue/traitée."""
-    if current_user.role not in ADMIN_ROLES:
-        raise HTTPException(403, "Accès refusé.")
-
-    db.execute(text("""
-        UPDATE budget_alerts
-        SET    acknowledged    = TRUE,
-               acknowledged_by = :uid,
-               acknowledged_at = NOW()
-        WHERE  id = :aid
-    """), {"uid": current_user.id, "aid": alert_id})
-    db.commit()
-
-    return {"status": "acknowledged", "alert_id": alert_id}
+    """Budget du mois courant — notes de frais uniquement."""
+    ensure_budget_tables(db)
+    user_id, username, role, email = _resolve_user(x_username, db)
+    return _build_budget(user_id, username, role, email, db)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # POST /budget/check
-# Vérifier un montant AVANT l'upload (appelé depuis UploadPage / InvoiceVerification)
 # ══════════════════════════════════════════════════════════════════════════════
+
+class BudgetCheckPayload(BaseModel):
+    amount_tnd    : float
+    document_type : str = "expense"
 
 @router.post("/check")
 def check_budget(
-    payload      : BudgetCheckPayload,
-    db           : Session = Depends(get_db),
-    current_user           = Depends(get_current_user),
+    payload    : BudgetCheckPayload,
+    db         : Session = Depends(get_db),
+    x_username : Optional[str] = Header(default=None, alias="X-Username"),
 ):
     """
-    Vérifie si le montant soumis peut être accepté sans dépasser le seuil.
-    Appelé côté frontend avant de confirmer un upload.
-
-    Retourne :
-      - allowed     : True si le montant peut être soumis
-      - new_pct     : nouveau pourcentage si ce montant est accepté
-      - alert_level : 'ok' | 'warning' | 'blocked'
-      - message     : message explicatif
+    Vérifie si un montant peut être ajouté.
+    ⚠️ Retourne toujours allowed=True pour les factures fournisseur.
     """
-    budget = _get_budget_row(current_user.id, db)
+    ensure_budget_tables(db)
 
-    seuil_max     = budget["seuil_max"]
-    total_actuel  = budget["total_depense"]
-    new_total     = total_actuel + payload.amount_tnd
-    new_pct       = (new_total / seuil_max * 100) if seuil_max > 0 else 0
+    if payload.document_type == "supplier_invoice":
+        return {"allowed": True, "alert_level": "ok",
+                "message": "Factures fournisseur hors seuil.", "new_pct": 0, "solde_restant": 0}
+
+    user_id, _, role, _ = _resolve_user(x_username, db)
+    seuil_max, _        = _get_seuil(user_id, role, db)
+    total_actuel        = _total_expenses_this_month(user_id, db)
+
+    new_total    = total_actuel + payload.amount_tnd
+    new_pct      = (new_total / seuil_max * 100) if seuil_max > 0 else 0
+    solde_restant = max(0.0, seuil_max - total_actuel)
 
     if new_total > seuil_max:
-        allowed     = False
-        alert_level = "blocked"
-        message     = (
-            f"Upload refusé : ce montant ({payload.amount_tnd:.3f} TND) "
-            f"dépasserait votre plafond de {seuil_max:.3f} TND. "
-            f"Solde restant : {budget['solde_restant']:.3f} TND."
-        )
-    elif new_pct >= 90:
-        allowed     = True
-        alert_level = "warning"
-        message     = (
-            f"⚠ Attention : après cet upload, vous aurez utilisé "
-            f"{new_pct:.1f}% de votre plafond ({seuil_max:.3f} TND)."
-        )
-    elif new_pct >= 80:
-        allowed     = True
-        alert_level = "warning"
-        message     = (
-            f"⚠ Vous approchez de votre plafond ({new_pct:.1f}% utilisé)."
-        )
-    else:
-        allowed     = True
-        alert_level = "ok"
-        message     = f"Montant accepté. Solde restant : {budget['solde_restant'] - payload.amount_tnd:.3f} TND."
+        return {
+            "allowed"      : False,
+            "alert_level"  : "exceeded",
+            "message"      : f"⛔ Plafond dépassé — {new_total:.3f} > {seuil_max:.3f} TND. Solde : {solde_restant:.3f} TND.",
+            "new_pct"      : round(new_pct, 2),
+            "solde_restant": round(solde_restant, 3),
+            "seuil_max"    : round(seuil_max, 3),
+            "total_actuel" : round(total_actuel, 3),
+        }
 
-    # Générer une alerte en DB si seuil franchi
-    if new_pct >= 80:
-        _maybe_create_alert(
-            user_id     = current_user.id,
-            pct         = new_pct,
-            total       = new_total,
-            seuil       = seuil_max,
-            document_id = None,
-            db          = db,
-        )
-
+    level = _alert_level(new_pct)
     return {
-        "allowed"        : allowed,
-        "alert_level"    : alert_level,
-        "message"        : message,
-        "seuil_max"      : seuil_max,
-        "total_actuel"   : round(total_actuel, 3),
-        "montant_soumis" : payload.amount_tnd,
-        "new_total"      : round(new_total, 3),
-        "new_pct"        : round(new_pct, 2),
-        "solde_restant"  : round(max(0, seuil_max - new_total), 3),
+        "allowed"      : True,
+        "alert_level"  : level,
+        "message"      : {
+            "ok"        : f"✓ Autorisé. Restant après : {seuil_max - new_total:.3f} TND.",
+            "warning_80": "⚠ 80% du plafond notes de frais atteint.",
+            "warning_90": "⚠ 90% du plafond notes de frais atteint.",
+        }.get(level, ""),
+        "new_pct"      : round(new_pct, 2),
+        "solde_restant": round(solde_restant, 3),
+        "seuil_max"    : round(seuil_max, 3),
+        "total_actuel" : round(total_actuel, 3),
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /budget/users  (admin)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/users")
+def get_all_budgets(
+    db         : Session = Depends(get_db),
+    x_username : Optional[str] = Header(default=None, alias="X-Username"),
+):
+    ensure_budget_tables(db)
+    _, _, caller_role, _ = _resolve_user(x_username, db)
+    if caller_role not in ADMIN_ROLES:
+        raise HTTPException(403, "Accès refusé.")
+
+    users   = db.execute(text(
+        "SELECT id, username, email, role FROM users WHERE is_active=TRUE ORDER BY id"
+    )).fetchall()
+    budgets = [_build_budget(u[0], u[1], u[3], u[2], db) for u in users]
+    return {"budgets": budgets, "total": len(budgets)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /budget/users/{user_id}
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/users/{user_id}")
+def get_user_budget(
+    user_id    : int,
+    db         : Session = Depends(get_db),
+    x_username : Optional[str] = Header(default=None, alias="X-Username"),
+):
+    ensure_budget_tables(db)
+    caller_id, _, caller_role, _ = _resolve_user(x_username, db)
+    if caller_id != user_id and caller_role not in ADMIN_ROLES:
+        raise HTTPException(403, "Accès refusé.")
+
+    row = db.execute(text(
+        "SELECT id, username, email, role FROM users WHERE id=:uid LIMIT 1"
+    ), {"uid": user_id}).fetchone()
+    if not row:
+        raise HTTPException(404, f"Utilisateur #{user_id} introuvable.")
+    return _build_budget(row[0], row[1], row[3], row[2], db)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POST/PATCH /budget/users/{user_id}  — seuil personnalisé
+# ══════════════════════════════════════════════════════════════════════════════
+
+class BudgetOverridePayload(BaseModel):
+    seuil_max   : float
+    period_type : str = "monthly"
+    notes       : Optional[str] = None
+
+@router.post("/users/{user_id}")
+@router.patch("/users/{user_id}")
+def upsert_user_budget(
+    user_id    : int,
+    payload    : BudgetOverridePayload,
+    db         : Session = Depends(get_db),
+    x_username : Optional[str] = Header(default=None, alias="X-Username"),
+):
+    ensure_budget_tables(db)
+    caller_id, _, caller_role, _ = _resolve_user(x_username, db)
+    if caller_role not in ADMIN_ROLES:
+        raise HTTPException(403, "Accès refusé.")
+    if payload.seuil_max <= 0:
+        raise HTTPException(400, "Le seuil doit être > 0.")
+
+    if not db.execute(text("SELECT 1 FROM users WHERE id=:uid"), {"uid": user_id}).fetchone():
+        raise HTTPException(404, f"Utilisateur #{user_id} introuvable.")
+
+    existing = db.execute(text(
+        "SELECT id FROM user_budgets WHERE user_id=:uid LIMIT 1"
+    ), {"uid": user_id}).fetchone()
+
+    if existing:
+        db.execute(text("""
+            UPDATE user_budgets
+            SET seuil_max=:s, period_type=:p, notes=:n, updated_at=NOW(), created_by=:by
+            WHERE user_id=:uid
+        """), {"s": payload.seuil_max, "p": payload.period_type, "n": payload.notes,
+               "uid": user_id, "by": caller_id})
+        action = "updated"
+    else:
+        db.execute(text("""
+            INSERT INTO user_budgets (user_id, seuil_max, period_type, notes, created_by)
+            VALUES (:uid, :s, :p, :n, :by)
+        """), {"uid": user_id, "s": payload.seuil_max, "p": payload.period_type,
+               "n": payload.notes, "by": caller_id})
+        action = "created"
+
+    db.commit()
+    return {"status": action, "user_id": user_id, "seuil_max": payload.seuil_max}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /budget/alerts  (admin)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/alerts")
+def get_budget_alerts(
+    db         : Session = Depends(get_db),
+    x_username : Optional[str] = Header(default=None, alias="X-Username"),
+):
+    ensure_budget_tables(db)
+    _, _, caller_role, _ = _resolve_user(x_username, db)
+    if caller_role not in ADMIN_ROLES:
+        raise HTTPException(403, "Accès réservé aux administrateurs.")
+
+    rows = db.execute(text("""
+        SELECT ba.id, ba.user_id, u.username, ba.alert_type,
+               ba.amount_tnd, ba.seuil, ba.pct_used, ba.acknowledged, ba.created_at
+        FROM budget_alerts ba
+        JOIN users u ON u.id = ba.user_id
+        ORDER BY ba.acknowledged ASC, ba.created_at DESC
+        LIMIT 200
+    """)).fetchall()
+
+    return [{
+        "alert_id"    : r[0], "user_id": r[1], "username": r[2],
+        "alert_type"  : r[3],
+        "amount"      : float(r[4]) if r[4] else 0,
+        "seuil"       : float(r[5]) if r[5] else 0,
+        "pct_used"    : float(r[6]) if r[6] else 0,
+        "acknowledged": bool(r[7]),
+        "created_at"  : str(r[8]) if r[8] else None,
+    } for r in rows]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POST /budget/alerts/{id}/ack
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/alerts/{alert_id}/ack")
+def acknowledge_alert(
+    alert_id   : int,
+    db         : Session = Depends(get_db),
+    x_username : Optional[str] = Header(default=None, alias="X-Username"),
+):
+    ensure_budget_tables(db)
+    caller_id, _, caller_role, _ = _resolve_user(x_username, db)
+    if caller_role not in ADMIN_ROLES:
+        raise HTTPException(403, "Accès réservé aux administrateurs.")
+
+    if not db.execute(text("SELECT 1 FROM budget_alerts WHERE id=:aid"), {"aid": alert_id}).fetchone():
+        raise HTTPException(404, f"Alerte #{alert_id} introuvable.")
+
+    db.execute(text(
+        "UPDATE budget_alerts SET acknowledged=TRUE, ack_by=:by WHERE id=:aid"
+    ), {"by": caller_id, "aid": alert_id})
+    db.commit()
+    return {"status": "acknowledged", "alert_id": alert_id}

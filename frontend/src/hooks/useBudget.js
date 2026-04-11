@@ -1,32 +1,24 @@
 // ─── src/hooks/useBudget.js ───────────────────────────────────────────────────
-// Hook React : vérifie le budget avant un upload et bloque si nécessaire.
+// Hook React : gestion du budget notes de frais.
 //
-// Usage dans UploadPage ou InvoiceVerification :
+// ⚠️  RÈGLE MÉTIER : le seuil s'applique UNIQUEMENT aux notes de frais.
+//     Toujours passer document_type="expense" pour les notes de frais.
+//     Les factures fournisseur (supplier_invoice) ne sont JAMAIS bloquées.
 //
+// Usage :
 //   const { budgetStatus, checkBudget, isBudgetBlocked } = useBudget();
 //
-//   // Avant de confirmer un upload :
-//   const result = await checkBudget(montant);
-//   if (!result.allowed) {
-//     setError(result.message);
-//     return;
-//   }
+//   // Avant de confirmer une note de frais :
+//   const result = await checkBudget(montant, "expense");
+//   if (!result.allowed) { setError(result.message); return; }
+//
+//   // Pour une facture fournisseur : NE PAS appeler checkBudget
+//   // (les factures fournisseur ne sont pas soumises au seuil)
 
 import { useState, useEffect, useCallback } from "react";
 
 const BASE_URL = "http://127.0.0.1:8000";
 
-/**
- * Hook : gestion du budget de l'utilisateur connecté.
- *
- * Retourne :
- *   budgetStatus   {object|null}  — données budget (seuil_max, total_depense, pct_utilise...)
- *   budgetLoading  {boolean}      — chargement en cours
- *   budgetError    {string}       — message d'erreur
- *   isBudgetBlocked {boolean}    — TRUE si l'upload doit être bloqué (plafond dépassé)
- *   checkBudget    {function}    — vérifie un montant AVANT upload
- *   refreshBudget  {function}    — recharge les données budget
- */
 export function useBudget() {
   const [budgetStatus,  setBudgetStatus]  = useState(null);
   const [budgetLoading, setBudgetLoading] = useState(false);
@@ -56,8 +48,20 @@ export function useBudget() {
   useEffect(() => { refreshBudget(); }, [refreshBudget]);
 
   // ── Vérifier un montant avant upload ──────────────────────────────────────
-  // Retourne { allowed, message, alert_level, new_pct, ... }
+  //
+  // ⚠️  APPELER UNIQUEMENT pour les notes de frais (document_type="expense").
+  //     Pour les factures fournisseur : ne pas appeler (toujours autorisé).
+  //
+  // @param {number}  amountTnd     — montant en TND
+  // @param {string}  documentType  — "expense" TOUJOURS pour notes de frais
+  //
+  // @returns {object} { allowed, alert_level, message, new_pct, solde_restant }
   const checkBudget = useCallback(async (amountTnd, documentType = "expense") => {
+    // Sécurité : les factures fournisseur ne sont jamais bloquées
+    if (documentType === "supplier_invoice") {
+      return { allowed: true, alert_level: "ok", message: "" };
+    }
+
     if (!amountTnd || amountTnd <= 0) {
       return { allowed: true, alert_level: "ok", message: "" };
     }
@@ -69,24 +73,24 @@ export function useBudget() {
           "Content-Type": "application/json",
           "X-Username"  : username,
         },
-        body: JSON.stringify({ amount_tnd: amountTnd, document_type: documentType }),
+        body: JSON.stringify({
+          amount_tnd    : amountTnd,
+          document_type : "expense",  // toujours "expense" — jamais supplier_invoice
+        }),
       });
 
       if (!res.ok) {
-        // En cas d'erreur backend → on ne bloque pas (fail-open)
+        // Fail-open : en cas d'erreur backend, on laisse passer
         console.warn("Budget check failed, allowing upload");
         return { allowed: true, alert_level: "ok", message: "" };
       }
 
       const result = await res.json();
-
-      // Recharge le budget après le check (les chiffres peuvent avoir changé)
       refreshBudget();
-
       return result;
 
     } catch (err) {
-      // Erreur réseau → on ne bloque pas l'upload
+      // Erreur réseau → fail-open
       console.warn("Budget check network error:", err.message);
       return { allowed: true, alert_level: "ok", message: "" };
     }
@@ -96,6 +100,7 @@ export function useBudget() {
     budgetStatus,
     budgetLoading,
     budgetError,
+    // TRUE uniquement si le plafond de notes de frais est dépassé
     isBudgetBlocked : budgetStatus?.is_blocked ?? false,
     checkBudget,
     refreshBudget,
