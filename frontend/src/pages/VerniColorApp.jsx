@@ -1,5 +1,6 @@
 // ─── src/pages/VerniColorApp.jsx ─────────────────────────────────────────────
 // MODIFICATION : ajout du flux "expense" →  ExpenseVerificationPage
+// MODIFICATION : ajout de la route "budget_admin" → BudgetAdminPage ← AJOUTÉ
 // Tout le reste est identique à la version précédente.
 
 import { useState, useEffect } from "react";
@@ -16,13 +17,15 @@ import DashboardPage            from "./DashboardPage";
 import InvoiceVerification      from "./InvoiceVerification";
 import ExpenseVerificationPage  from "./Expenseverificationpage";
 import AdminPage                from "./AdminPage";
-import SystemAdminPage          from "./SystemAdminPage";          // ← NOUVEAU
+import SystemAdminPage          from "./SystemAdminPage";
+import BudgetAdminPage          from "./BudgetAdminPage";   // ← AJOUTÉ
 
 // ── RBAC — permissions par page ──────────────────────────────────────────────
 const PAGE_ROLES = {
   dashboard            : ["Comptable"],
   admin                : ["Administrateur Système", "Administrateur"],
-  sysadmin             : ["Administrateur Système"],               // ← NOUVEAU
+  sysadmin             : ["Administrateur Système"],
+  budget_admin         : ["Administrateur Système", "Administrateur"],   // ← AJOUTÉ
   upload               : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
   home                 : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
 };
@@ -36,7 +39,7 @@ export default function VerniColorApp() {
   // Données OCR facture fournisseur → InvoiceVerification
   const [ocrData,          setOcrData]          = useState(null);
 
-  // Données OCR note de frais → ExpenseVerificationPage  ← NOUVEAU
+  // Données OCR note de frais → ExpenseVerificationPage
   const [expenseData,      setExpenseData]      = useState(null);
 
   // Toast de permission refusée
@@ -96,7 +99,7 @@ export default function VerniColorApp() {
   // data = résultat complet de POST /receipts/upload
   const handleExpenseOcrDone = (data) => {
     setExpenseData(data);
-    setPage("expense_verification");   // ← nouvelle page
+    setPage("expense_verification");
   };
 
   // ── Retour depuis vérification facture ────────────────────────────────────
@@ -153,23 +156,27 @@ export default function VerniColorApp() {
         {page === "home" && (
           <HomePage setPage={goTo} username={username} uploadedInvoices={uploadedInvoices} />
         )}
-        {/* ← NOUVEAU prop */}
+
         {page === "upload" && (
           <UploadPage
             onUploaded={handleUploaded}
             onOcrDone={handleOcrDone}
-            onExpenseOcrDone={handleExpenseOcrDone}   
+            onExpenseOcrDone={handleExpenseOcrDone}
           />
         )}
 
         {page === "dashboard" && <DashboardPage />}
 
-        {page === "admin"    && <AdminPage />}
+        {/* AdminPage reçoit setPage pour le lien vers BudgetAdminPage ← MODIFIÉ */}
+        {page === "admin" && <AdminPage setPage={goTo} />}
 
-        {/* ── Interface Administrateur Système (NOUVEAU) ───────────────── */}
+        {/* ── Interface Administrateur Système ─────────────────────────── */}
         {page === "sysadmin" && <SystemAdminPage />}
 
-        {/* ── Vérification facture fournisseur (inchangé) ─────────────────── */}
+        {/* ── Gestion des seuils financiers (NOUVEAU) ──────────────────── */}
+        {page === "budget_admin" && <BudgetAdminPage />}
+
+        {/* ── Vérification facture fournisseur ────────────────────────── */}
         {page === "verification" && (
           <InvoiceVerification
             ocrData={ocrData}
@@ -178,7 +185,7 @@ export default function VerniColorApp() {
           />
         )}
 
-        {/* ── Vérification note de frais (NOUVEAU) ────────────────────────── */}
+        {/* ── Vérification note de frais ───────────────────────────────── */}
         {page === "expense_verification" && (
           <ExpenseVerificationPage
             receiptData={expenseData}

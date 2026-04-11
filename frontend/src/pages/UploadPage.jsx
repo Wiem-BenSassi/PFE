@@ -5,9 +5,12 @@
 //   - Header JWT Authorization + X-Username envoyés automatiquement
 //   - Gestion des erreurs backend, loading spinner, toasts de succès/erreur
 //   - Données OCR transmises aux pages de vérification respectives
+//   - Vérification budget avant upload ← AJOUTÉ
 
 import { useState, useRef, useCallback } from "react";
 import { Spinner, FileIcon } from "../components/Icons";
+import { useBudget } from "../hooks/useBudget";           // ← AJOUTÉ
+import BudgetWidget  from "../components/BudgetWidget";   // ← AJOUTÉ
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 const BASE_URL = "http://127.0.0.1:8000";
@@ -64,6 +67,9 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone }) => {
   const [error,      setError]      = useState("");
   const [toast,      setToast]      = useState(null); // { type, message }
 
+  // ← AJOUTÉ : hook budget
+  const { budgetStatus, isBudgetBlocked, checkBudget, refreshBudget } = useBudget();
+
   const inputExpenseRef = useRef(null);
   const inputInvoiceRef = useRef(null);
   const cameraRef       = useRef(null);
@@ -107,6 +113,15 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone }) => {
   const handleUpload = async (file, type) => {
     setUploading(true);
     setError("");
+
+    // ← AJOUTÉ : Vérification budget globale AVANT l'envoi au backend
+    if (type === UPLOAD_TYPES.EXPENSE || type === UPLOAD_TYPES.SUPPLIER_INVOICE) {
+      if (isBudgetBlocked) {
+        setError("Upload bloqué : votre plafond mensuel est atteint. Contactez votre administrateur.");
+        setUploading(false);
+        return;
+      }
+    }
 
     try {
       const formData = new FormData();
@@ -172,6 +187,9 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone }) => {
       setFiles([]);
 
       showToast("success", `Document uploadé et analysé avec succès !`);
+
+      // ← AJOUTÉ : Rafraîchir le budget après upload réussi
+      refreshBudget();
 
       // ── Redirection selon le type ──────────────────────────────────────────
       if (type === UPLOAD_TYPES.EXPENSE) {
@@ -251,6 +269,12 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone }) => {
           <p style={{ color: "#5a6e99", fontSize: 14, fontWeight: 300 }}>
             Uploadez vos documents selon votre profil.
           </p>
+        </div>
+
+        {/* ── Statut budget ─────────────────────────────────────────────────── */}
+        {/* ← AJOUTÉ : widget budget compact avant la zone drag & drop */}
+        <div className="fe2" style={{ marginBottom: 20 }}>
+          <BudgetWidget compact />
         </div>
 
         {/* ── Sélecteur de type d'upload ───────────────────────────────────── */}

@@ -1,6 +1,6 @@
 // src/pages/AdminPage.jsx
 // ─────────────────────────────────────────────────────────────
-// Page administrateur : gestion des seuils + consommation
+// Page administrateur : gestion des seuils + consommation + accès BudgetAdminPage
 // Accessible uniquement aux rôles Admin / Admin Système
 // ─────────────────────────────────────────────────────────────
 
@@ -51,7 +51,7 @@ const MiniBar = ({ value, max, color = "#3b82f6" }) => {
 // COMPOSANT PRINCIPAL
 // ══════════════════════════════════════════════════════════════
 
-export default function AdminPage() {
+export default function AdminPage({ setPage }) {
 
   const [tab,         setTab]         = useState("thresholds"); // "thresholds" | "consumption"
   const [thresholds,  setThresholds]  = useState([]);
@@ -216,7 +216,7 @@ export default function AdminPage() {
           <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 30, fontWeight: 800, color: "#e8f0ff", marginBottom: 6, letterSpacing: "-0.3px" }}>
             Admin <span style={{ color: "#3b82f6" }}>Dashboard</span>
           </h1>
-          <p style={{ color: "#5a6e99", fontSize: 14 }}>Gestion des seuils et suivi des consommations.</p>
+          <p style={{ color: "#5a6e99", fontSize: 14 }}>Gestion des seuils, suivi des consommations et seuils financiers.</p>
         </div>
 
         {/* ── KPI Cards ─────────────────────────────────── */}
@@ -235,6 +235,31 @@ export default function AdminPage() {
                 <p style={{ fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 700, color: k.color }}>{k.value}</p>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── Carte accès Seuils financiers (BudgetAdminPage) ← AJOUTÉ ───── */}
+        {setPage && (
+          <div
+            style={{ ...card, padding: "24px 28px", marginBottom: 28, cursor: "pointer", transition: "all 0.25s", display: "flex", alignItems: "center", gap: 20 }}
+            onClick={() => setPage("budget_admin")}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.4)"; e.currentTarget.style.boxShadow = "0 12px 50px rgba(0,0,0,0.5), 0 0 30px rgba(139,92,246,0.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.4)"; }}
+          >
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg,rgba(139,92,246,0.2),rgba(109,40,217,0.15))", border: "1px solid rgba(139,92,246,0.35)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="1" x2="12" y2="23"/>
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, color: "#e8f0ff", marginBottom: 4 }}>Seuils financiers</p>
+              <p style={{ fontSize: 13, color: "#5a6e99", fontWeight: 300 }}>Gérer les plafonds de dépenses mensuels par utilisateur</p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#a78bfa", fontSize: 13, fontWeight: 500 }}>
+              Gérer
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12,5 19,12 12,19"/></svg>
+            </div>
           </div>
         )}
 

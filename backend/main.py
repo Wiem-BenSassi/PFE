@@ -21,6 +21,9 @@ from app.controllers.receipt_controller import router as receipt_router
 from app.controllers.admin_controller   import router as admin_router
 from auth.login                         import router as login_router
 from app.controllers.system_admin_controller import router as sysadmin_router
+# 1. Importer le router :
+from app.controllers.budget_controller import router as budget_router
+ 
 
 app = FastAPI(
     title="Vernicolor Invoice API",
@@ -53,3 +56,4 @@ app.include_router(login_router,   prefix="/auth",     tags=["Authentication"])
 app.include_router(invoice_router, prefix="/invoices", tags=["Invoices"])
 app.include_router(receipt_router, prefix="/receipts", tags=["Expense Receipts"])
 app.include_router(admin_router,   prefix="/admin",    tags=["Admin"])
+app.include_router(budget_router, prefix="/budget", tags=["Budget"])

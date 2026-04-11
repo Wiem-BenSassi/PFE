@@ -10,6 +10,11 @@
 //   • Si needs_review = true  → l'utilisateur DOIT vérifier manuellement avant de confirmer
 //   • Si needs_review = false → validation automatique après confirmation
 //
+// VÉRIFICATION BUDGET :
+//   • Avant la confirmation, on vérifie le budget avec le montant de la facture ← AJOUTÉ
+//   • Si budget bloqué → erreur affichée, confirmation refusée
+//   • Si warning → message affiché mais on continue
+//
 // ERREURS GÉRÉES :
 //   • 400 — fichier invalide / type non accepté
 //   • 403 — rôle insuffisant
@@ -20,6 +25,7 @@
 //   • Mauvais type de document (note de frais vs facture fournisseur)
 
 import { useState, useRef } from "react";
+import { useBudget } from "../hooks/useBudget";   // ← AJOUTÉ
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 const BASE_URL    = "http://127.0.0.1:8000";
@@ -84,6 +90,9 @@ const AlertBanner = ({ type, message, onClose }) => {
 export default function InvoiceVerification({ ocrData = {}, onConfirm, onBack }) {
 
   const username = localStorage.getItem("username") || "";
+
+  // ← AJOUTÉ : hook budget pour vérification avant confirmation
+  const { checkBudget, isBudgetBlocked } = useBudget();
 
   // ── Formulaire pré-rempli avec les données OCR ────────────────────────────
   const [form, setForm] = useState({
@@ -232,6 +241,20 @@ export default function InvoiceVerification({ ocrData = {}, onConfirm, onBack })
     setSuccessMsg("");
 
     try {
+      // ← AJOUTÉ : Vérification budget avec le montant de la facture
+      if (form.totalAmount) {
+        const budgetCheck = await checkBudget(parseFloat(form.totalAmount), "supplier_invoice");
+        if (!budgetCheck.allowed) {
+          setSubmitError(budgetCheck.message);
+          setSubmitting(false);
+          return;
+        }
+        if (budgetCheck.alert_level === "warning") {
+          setUploadWarning(budgetCheck.message);
+          // On continue quand même (juste un warning)
+        }
+      }
+
       // ── Cas sans document_id : pas de connexion backend (mode démo) ───────
       if (!documentId) {
         console.warn("Aucun document_id — la validation backend est ignorée (mode démo).");

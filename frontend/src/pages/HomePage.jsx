@@ -1,6 +1,8 @@
 // ─── src/pages/HomePage.jsx ──────────────────────────────────────────────────
 // Page d'accueil après login.
-// Affiche : message de bienvenue, stats, cartes d'action, tableau des factures récentes.
+// Affiche : message de bienvenue, stats, widget budget, cartes d'action, tableau des factures récentes.
+
+import BudgetWidget from "../components/BudgetWidget";   // ← AJOUTÉ
 
 const HomePage = ({ setPage, username = "Admin", uploadedInvoices = [] }) => {
 
@@ -62,8 +64,14 @@ const HomePage = ({ setPage, username = "Admin", uploadedInvoices = [] }) => {
           ))}
         </div>
 
+        {/* ── Budget personnel ─────────────────────────────────────────── */}
+        {/* ← AJOUTÉ : widget budget après les cartes de stats */}
+        <div className="fe3" style={{ marginBottom: 40 }}>
+          <BudgetWidget />
+        </div>
+
         {/* ── Cartes d'action : Upload et Dashboard ───────────────────────── */}
-        <div className="fe3" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 24, marginBottom: 40 }}>
+        <div className="fe4" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 24, marginBottom: 40 }}>
 
           {/* Carte Upload */}
           <div
@@ -115,7 +123,7 @@ const HomePage = ({ setPage, username = "Admin", uploadedInvoices = [] }) => {
         </div>
 
         {/* ── Tableau des factures récentes ────────────────────────────────── */}
-        <div className="fe4 surface-card" style={{ padding: "28px 28px" }}>
+        <div className="fe5 surface-card" style={{ padding: "28px 28px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
             <h3 style={{ fontFamily: "'Syne',sans-serif", fontSize: 16, fontWeight: 700, color: "#e8f0ff" }}>Recent Invoices</h3>
             <button className="btn-ghost" style={{ fontSize: 12, padding: "6px 14px" }} onClick={() => setPage("upload")}>View all</button>
