@@ -1,7 +1,7 @@
 // ─── src/pages/VerniColorApp.jsx ─────────────────────────────────────────────
 // MODIFICATION : ajout du flux "expense" →  ExpenseVerificationPage
-// MODIFICATION : ajout de la route "budget_admin" → BudgetAdminPage ← AJOUTÉ
-// Tout le reste est identique à la version précédente.
+// MODIFICATION : ajout de la route "budget_admin" → BudgetAdminPage
+// MODIFICATION : ajout de l'archivage frontend → ArchivePage + useArchive ← AJOUTÉ
 
 import { useState, useEffect } from "react";
 
@@ -18,15 +18,18 @@ import InvoiceVerification      from "./InvoiceVerification";
 import ExpenseVerificationPage  from "./Expenseverificationpage";
 import AdminPage                from "./AdminPage";
 import SystemAdminPage          from "./SystemAdminPage";
+import ArchivePage              from "./ArchivePage";        // ← AJOUTÉ
+import { useArchive }           from "../hooks/useArchive";  // ← AJOUTÉ
 
 
 // ── RBAC — permissions par page ──────────────────────────────────────────────
 const PAGE_ROLES = {
-  dashboard            : ["Comptable"],
-  admin                : ["Administrateur Système", "Administrateur"],
-  sysadmin             : ["Administrateur Système"],
-  upload               : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
-  home                 : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
+  dashboard : ["Comptable"],
+  admin     : ["Administrateur Système", "Administrateur"],
+  sysadmin  : ["Administrateur Système"],
+  upload    : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
+  home      : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"],
+  archive   : ["Comptable", "Administrateur Système", "Administrateur", "Utilisateur"], // ← AJOUTÉ
 };
 
 export default function VerniColorApp() {
@@ -43,6 +46,10 @@ export default function VerniColorApp() {
 
   // Toast de permission refusée
   const [permToast, setPermToast] = useState(null);
+
+  // ── Hook archivage localStorage ──────────────────────────────────────────
+  // ← AJOUTÉ : toute la logique archive est encapsulée dans ce hook
+  const { archivedFiles, addToArchive, removeFromArchive, clearArchive } = useArchive();
 
   const showPermToast = (msg) => {
     setPermToast(msg);
@@ -156,17 +163,19 @@ export default function VerniColorApp() {
           <HomePage setPage={goTo} username={username} uploadedInvoices={uploadedInvoices} />
         )}
 
+        {/* ← MODIFIÉ : addToArchive passé en prop à UploadPage */}
         {page === "upload" && (
           <UploadPage
             onUploaded={handleUploaded}
             onOcrDone={handleOcrDone}
             onExpenseOcrDone={handleExpenseOcrDone}
+            addToArchive={addToArchive}
           />
         )}
 
         {page === "dashboard" && <DashboardPage />}
 
-        {/* AdminPage reçoit setPage pour le lien vers BudgetAdminPage ← MODIFIÉ */}
+        {/* AdminPage reçoit setPage pour le lien vers BudgetAdminPage */}
         {page === "admin" && <AdminPage setPage={goTo} />}
 
         {/* ── Interface Administrateur Système ─────────────────────────── */}
@@ -187,6 +196,15 @@ export default function VerniColorApp() {
             receiptData={expenseData}
             onBack={handleExpenseBack}
             onConfirm={handleExpenseConfirm}
+          />
+        )}
+
+        {/* ── Archive des factures ← AJOUTÉ ────────────────────────────── */}
+        {page === "archive" && (
+          <ArchivePage
+            archivedFiles={archivedFiles}
+            removeFromArchive={removeFromArchive}
+            clearArchive={clearArchive}
           />
         )}
 

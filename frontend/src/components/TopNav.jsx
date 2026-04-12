@@ -2,6 +2,7 @@
 // Barre de navigation fixe en haut de l'écran.
 // Visible uniquement quand l'utilisateur est connecté (pas sur la page login).
 // Contient : logo cliquable, liens de navigation, avatar utilisateur, déconnexion.
+// MODIFICATION : ajout du lien "Archive" ← AJOUTÉ
 
 import { AutomotiveIcon } from "./Icons";
 
@@ -43,6 +44,21 @@ const TopNav = ({ page, setPage, user = "Admin", onLogout }) => (
 
       <button className={`nav-link ${page === "dashboard" ? "active" : ""}`} onClick={() => setPage("dashboard")}>
         Dashboard
+      </button>
+
+      {/* ── Archive ← AJOUTÉ — visible par tous les rôles connectés ──────── */}
+      <button
+        className={`nav-link ${page === "archive" ? "active" : ""}`}
+        onClick={() => setPage("archive")}
+        style={{ display: "flex", alignItems: "center", gap: 6 }}
+      >
+        {/* Icône archive inline */}
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="21,8 21,21 3,21 3,8"/>
+          <rect x="1" y="3" width="22" height="5"/>
+          <line x1="10" y1="12" x2="14" y2="12"/>
+        </svg>
+        Archive
       </button>
 
       {/* 🔐 Bouton Admin — visible pour Admin et Admin Système */}

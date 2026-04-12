@@ -6,6 +6,7 @@
 //   - Gestion des erreurs backend, loading spinner, toasts de succès/erreur
 //   - Données OCR transmises aux pages de vérification respectives
 //   - Vérification budget avant upload ← AJOUTÉ
+//   - Archivage automatique dans localStorage après upload réussi ← AJOUTÉ
 
 import { useState, useRef, useCallback } from "react";
 import { Spinner, FileIcon } from "../components/Icons";
@@ -53,8 +54,9 @@ const Toast = ({ type, message, onClose }) => {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // COMPOSANT PRINCIPAL
+// ← AJOUTÉ : prop addToArchive reçue depuis VerniColorApp
 // ═════════════════════════════════════════════════════════════════════════════
-const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone }) => {
+const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) => {
 
   const role     = localStorage.getItem("role") || "";
   const username = localStorage.getItem("username") || "";
@@ -187,6 +189,17 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone }) => {
       setFiles([]);
 
       showToast("success", `Document uploadé et analysé avec succès !`);
+
+      // ← AJOUTÉ : Archivage automatique du fichier brut dans localStorage
+      // addToArchive est optionnel (présent seulement si passé depuis VerniColorApp)
+      if (typeof addToArchive === "function") {
+        try {
+          await addToArchive(file, type);
+        } catch {
+          // L'archivage est silencieux — une erreur ici ne bloque pas l'upload
+          console.warn("Archive: impossible d'archiver le fichier localement.");
+        }
+      }
 
       // ← AJOUTÉ : Rafraîchir le budget après upload réussi
       refreshBudget();
