@@ -3,8 +3,11 @@
 
 import { useState, useEffect } from "react";
 import BudgetWidget from "../components/BudgetWidget";
+import BudgetAlertBanner  from "../components/BudgetAlertBanner"; 
+import { useBudget }      from "../hooks/useBudget";    
 
 const HomePage = ({ setPage, username = "Admin", uploadedInvoices = [] }) => {
+  const { budgetStatus } = useBudget(); 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
   const [isTablet, setIsTablet] = useState(() => window.innerWidth < 900);
 
@@ -104,6 +107,11 @@ const HomePage = ({ setPage, username = "Admin", uploadedInvoices = [] }) => {
         <div className="fe3" style={{ marginBottom:22 }}>
           <BudgetWidget compact={isMobile} />
         </div>
+        {/* ── Alerte budget ← AJOUTER ────────────────────────────── */}
+          <BudgetAlertBanner
+          pct={budgetStatus?.pct_utilise ?? 0}
+          compact={isMobile}
+          />
 
         {/* ── Actions rapides ───────────────────────────────────────────────── */}
         <div className="fe4 grid-2" style={{ marginBottom:22 }}>
@@ -136,7 +144,7 @@ const HomePage = ({ setPage, username = "Admin", uploadedInvoices = [] }) => {
             </div>
             <h2 style={{ fontFamily:"'Syne',sans-serif",
                          fontSize:isMobile?16:20, fontWeight:700, color:"#e8f0ff", marginBottom:6 }}>
-              Upload Factures
+              Téléverser Facture
             </h2>
             {!isMobile && (
               <p style={{ color:"#5a6e99", fontSize:13, fontWeight:300, lineHeight:1.6, marginBottom:16 }}>

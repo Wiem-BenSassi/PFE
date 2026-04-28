@@ -1,38 +1,36 @@
-# ─── app/controllers/budget_controller.py ────────────────────────────────────
-#
-# MODULE BUDGET — Adapté au schéma réel de la base de données Vernicolor.
-#
-# TABLES EXISTANTES UTILISÉES :
-#   users               → id, username, email, role, is_active
-#   expense_receipts    → submitted_by, total_amount_tnd, status, created_at
-#   expense_thresholds  → role_name, max_amount_tnd, auto_approve_below_tnd, is_active
-#
-# TABLES CRÉÉES PAR CE MODULE :
-#   user_budgets   → seuil personnalisé par user (prioritaire sur expense_thresholds)
-#   budget_alerts  → historique des alertes 80% / 90% / dépassement
-#
-# ⚠️  RÈGLE MÉTIER FONDAMENTALE ⚠️
-#   Le seuil s'applique UNIQUEMENT aux expense_receipts (notes de frais).
-#   supplier_invoices est totalement EXCLU des calculs de seuil.
-#
-# SEUILS CONFIGURÉS DANS VOTRE DB (expense_thresholds) :
-#   Administrateur          : 5 000 TND  (auto-approve : 1 000)
-#   Administrateur Système  :   500 TND  (auto-approve :   100)
-#   Comptable               : 1 000 TND  (auto-approve :   200)
-#   Utilisateur             :   100 TND  (auto-approve :    30)
-
+#contrôle budgétaire des notes de frais dans l’application VerniColor.
+#contrôler les dépenses des employés en notes de frais (expense_receipts).
+#Envoyer des alertes automatiques par email aux administrateurs quand un utilisateur approche ou dépasse son plafond.
+#Ne plus bloquer l’upload des notes de frais (même si le budget est dépassé) 
+# → c’est une décision métier.
 from fastapi        import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from sqlalchemy     import text
 from pydantic       import BaseModel
 from typing         import Optional
 
-from app.database.connection import get_db
-from auth.rbac               import get_current_user, ROLES
+from app.database.connection       import get_db
+from auth.rbac                     import get_current_user, ROLES
+
+# Import du service email 
+try:
+    from app.services.email_service import send_budget_alert_email_async as _send_alert_email
+
+    _EMAIL_ENABLED = True
+except ImportError:
+    _EMAIL_ENABLED = False
+    import logging
+    logging.getLogger(__name__).warning(
+        "[Budget] app/services/email_service.py introuvable — alertes email désactivées."
+    )
+    print(f"✅ EMAIL_ENABLED = {_EMAIL_ENABLED}")
 
 router = APIRouter()
 
 ADMIN_ROLES = [ROLES.ADMIN_SYSTEME, ROLES.ADMIN_METIER]
+
+# Paliers qui déclenchent un email vers les admins
+EMAIL_ALERT_LEVELS = {"warning_95", "exceeded"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -61,6 +59,7 @@ def ensure_budget_tables(db: Session):
             amount_tnd   NUMERIC(14,3),
             seuil        NUMERIC(14,3),
             pct_used     NUMERIC(6,2),
+            email_sent   BOOLEAN NOT NULL DEFAULT FALSE,
             acknowledged BOOLEAN NOT NULL DEFAULT FALSE,
             ack_by       INTEGER REFERENCES users(id),
             created_at   TIMESTAMP NOT NULL DEFAULT NOW()
@@ -86,20 +85,19 @@ def _resolve_user(x_username: Optional[str], db: Session) -> tuple:
         raise HTTPException(404, "Utilisateur introuvable.")
     return row[0], row[1], row[2], row[3]
 
-
+#Cette fonction cherche le plafond budgétaire de l’utilisateur. 
+# Elle cherche d’abord un seuil spécial pour lui, sinon elle prend celui de son rôle.
 def _get_seuil(user_id: int, role: str, db: Session) -> tuple:
     """
     Retourne (seuil_max, source).
     Priorité : user_budgets > expense_thresholds > fallback 100 000
     """
-    # 1. Seuil personnalisé (user_budgets)
     r = db.execute(text(
         "SELECT seuil_max FROM user_budgets WHERE user_id=:uid LIMIT 1"
     ), {"uid": user_id}).fetchone()
     if r:
         return float(r[0]), "user"
 
-    # 2. Seuil par rôle (expense_thresholds — votre table existante)
     r = db.execute(text("""
         SELECT max_amount_tnd FROM expense_thresholds
         WHERE role_name=:role AND is_active=TRUE LIMIT 1
@@ -109,7 +107,8 @@ def _get_seuil(user_id: int, role: str, db: Session) -> tuple:
 
     return 100_000.0, "default"
 
-
+#Elle calcule combien l’utilisateur a dépensé ce mois-ci uniquement en notes de frais. 
+#Les factures fournisseurs ne sont pas comptées dans le budget.
 def _total_expenses_this_month(user_id: int, db: Session) -> float:
     """
     ⚠️ expense_receipts SEULEMENT — supplier_invoices EXCLU.
@@ -138,34 +137,84 @@ def _total_invoices_this_month(user_id: int, db: Session) -> float:
           AND EXTRACT(YEAR  FROM si.created_at) = EXTRACT(YEAR  FROM NOW())
     """), {"uid": user_id}).fetchone()
     return float(r[0]) if r else 0.0
-
-
+#Selon le pourcentage utilisé, elle retourne le niveau d’alerte.
+#Le palier 95% est très important car c’est à partir de là que l’email est envoyé.
 def _alert_level(pct: float) -> str:
+    """
+    Paliers d'alerte :
+      ≥ 100% → exceeded
+      ≥  95% → warning_95   ← NOUVEAU (déclenche email)
+      ≥  90% → warning_90
+      ≥  80% → warning_80
+      <  80% → ok
+    """
     if pct >= 100: return "exceeded"
+    if pct >= 95:  return "warning_95"   
     if pct >= 90:  return "warning_90"
     if pct >= 80:  return "warning_80"
     return "ok"
 
-
-def _save_alert(user_id: int, level: str, amount: float, seuil: float, pct: float, db: Session):
+#Quand le niveau atteint 95% ou plus, cette fonction :
+#Enregistre l’alerte dans la base de données.
+#Envoie un email aux administrateurs (en arrière-plan).
+def _save_alert(
+    user_id: int, level: str, amount: float, seuil: float,
+    pct: float, username: str, email: str, db: Session
+):
+    """
+    Insère une alerte en base si elle n'existe pas encore ce mois.
+    Envoie un email aux admins pour les niveaux ≥ 95%.
+    """
+    print(f"🔍 _save_alert appelé — level={level}, user={username}, pct={pct}")
+    
     if level == "ok":
+        print("⏭ level=ok, rien à faire")
         return
-    exists = db.execute(text("""
-        SELECT 1 FROM budget_alerts
+
+    existing = db.execute(text("""
+        SELECT id, email_sent FROM budget_alerts
         WHERE user_id=:uid AND alert_type=:t
           AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())
           AND EXTRACT(YEAR  FROM created_at)=EXTRACT(YEAR  FROM NOW())
         LIMIT 1
     """), {"uid": user_id, "t": level}).fetchone()
-    if not exists:
+
+    print(f"🔍 existing={existing}, EMAIL_ENABLED={_EMAIL_ENABLED}, level in EMAIL_ALERT_LEVELS={level in EMAIL_ALERT_LEVELS}")
+
+    email_sent = False
+
+    if not existing:
+        print(f"📧 Tentative envoi email pour {username}...")
+        if level in EMAIL_ALERT_LEVELS and _EMAIL_ENABLED:
+            _send_alert_email(
+                username=username,
+                user_email=email,
+                pct=pct,
+                total=amount,
+                seuil=seuil,
+                level=level,
+            )
+            email_sent = True
+            print(f"✅ Email envoyé pour {username}")
+        else:
+            print(f"❌ Email NON envoyé — level={level}, EMAIL_ENABLED={_EMAIL_ENABLED}")
+
         db.execute(text("""
-            INSERT INTO budget_alerts (user_id, alert_type, amount_tnd, seuil, pct_used)
-            VALUES (:uid, :t, :a, :s, :p)
-        """), {"uid": user_id, "t": level, "a": round(amount, 3),
-               "s": round(seuil, 3), "p": round(pct, 2)})
+            INSERT INTO budget_alerts (user_id, alert_type, amount_tnd, seuil, pct_used, email_sent)
+            VALUES (:uid, :t, :a, :s, :p, :es)
+        """), {
+            "uid": user_id,
+            "t"  : level,
+            "a"  : round(amount, 3),
+            "s"  : round(seuil,  3),
+            "p"  : round(pct,    2),
+            "es" : email_sent,
+        })
         db.commit()
-
-
+    else:
+        print(f"⏭ Alerte déjà existante en base pour {username} — email non renvoyé")
+#C’est le cœur du fichier. Elle calcule tout 
+#(pourcentage, solde restant, niveau d’alerte) et prépare les données à renvoyer au frontend.
 def _build_budget(user_id: int, username: str, role: str, email: str, db: Session) -> dict:
     seuil_max, seuil_source = _get_seuil(user_id, role, db)
 
@@ -175,12 +224,13 @@ def _build_budget(user_id: int, username: str, role: str, email: str, db: Sessio
     total_invoices = _total_invoices_this_month(user_id, db)
 
     total_depense = total_receipts
-    solde_restant = max(0.0, seuil_max - total_depense)
+    # MODIFIÉ : solde_restant peut être négatif (on n'applique plus max(0, ...))
+    solde_restant = seuil_max - total_depense
     pct           = (total_depense / seuil_max * 100) if seuil_max > 0 else 0.0
-    is_blocked    = total_depense >= seuil_max
     level         = _alert_level(pct)
 
-    _save_alert(user_id, level, total_depense, seuil_max, pct, db)
+    # Passe username et email pour l'envoi d'email
+    _save_alert(user_id, level, total_depense, seuil_max, pct, username, email, db)
 
     override = db.execute(text(
         "SELECT id, notes FROM user_budgets WHERE user_id=:uid LIMIT 1"
@@ -195,9 +245,10 @@ def _build_budget(user_id: int, username: str, role: str, email: str, db: Sessio
         "seuil_source"     : seuil_source,
         # ⚠️ total_depense = notes de frais uniquement
         "total_depense"    : round(total_depense, 3),
-        "solde_restant"    : round(solde_restant, 3),
+        "solde_restant"    : round(solde_restant, 3),   # peut être négatif
         "pct_utilise"      : round(pct, 2),
-        "is_blocked"       : is_blocked,
+        # MODIFIÉ : jamais bloqué
+        "is_blocked"       : False,
         "depenses_receipts": round(total_receipts, 3),
         "depenses_invoices": round(total_invoices, 3),  # hors calcul
         "alert_status"     : level,
@@ -237,42 +288,54 @@ def check_budget(
 ):
     """
     Vérifie si un montant peut être ajouté.
+
+    MODIFIÉ :
+      - allowed = True TOUJOURS (plus de blocage, même si dépassé)
+      - alert_level renvoyé pour affichage frontend
+      - warning_95 et exceeded → message d'avertissement clair
     ⚠️ Retourne toujours allowed=True pour les factures fournisseur.
     """
     ensure_budget_tables(db)
 
     if payload.document_type == "supplier_invoice":
-        return {"allowed": True, "alert_level": "ok",
-                "message": "Factures fournisseur hors seuil.", "new_pct": 0, "solde_restant": 0}
-
-    user_id, _, role, _ = _resolve_user(x_username, db)
-    seuil_max, _        = _get_seuil(user_id, role, db)
-    total_actuel        = _total_expenses_this_month(user_id, db)
-
-    new_total    = total_actuel + payload.amount_tnd
-    new_pct      = (new_total / seuil_max * 100) if seuil_max > 0 else 0
-    solde_restant = max(0.0, seuil_max - total_actuel)
-
-    if new_total > seuil_max:
         return {
-            "allowed"      : False,
-            "alert_level"  : "exceeded",
-            "message"      : f"⛔ Plafond dépassé — {new_total:.3f} > {seuil_max:.3f} TND. Solde : {solde_restant:.3f} TND.",
-            "new_pct"      : round(new_pct, 2),
-            "solde_restant": round(solde_restant, 3),
-            "seuil_max"    : round(seuil_max, 3),
-            "total_actuel" : round(total_actuel, 3),
+            "allowed"      : True,
+            "alert_level"  : "ok",
+            "message"      : "Factures fournisseur hors seuil.",
+            "new_pct"      : 0,
+            "solde_restant": 0,
         }
 
-    level = _alert_level(new_pct)
+    user_id, username, role, email = _resolve_user(x_username, db)
+    seuil_max, _                   = _get_seuil(user_id, role, db)
+    total_actuel                   = _total_expenses_this_month(user_id, db)
+
+    new_total     = total_actuel + payload.amount_tnd
+    new_pct       = (new_total / seuil_max * 100) if seuil_max > 0 else 0
+    solde_restant = seuil_max - total_actuel   # peut être négatif
+    level         = _alert_level(new_pct)
+
+    # Messages par palier (upload toujours autorisé)
+    messages = {
+        "ok"         : f"✓ Autorisé. Restant après upload : {seuil_max - new_total:.3f} TND.",
+        "warning_80" : "⚠ 80% du plafond notes de frais atteint.",
+        "warning_90" : "⚠ 90% du plafond notes de frais atteint.",
+        # MODIFIÉ : message avertissement, pas blocage
+        "warning_95" : (
+            f"🚨 Attention : {new_pct:.1f}% du plafond atteint. "
+            "L'upload est autorisé mais un email a été envoyé à l'administrateur."
+        ),
+        "exceeded"   : (
+            f"🚨 Plafond dépassé ({new_pct:.1f}%). "
+            "L'upload est maintenu. L'administrateur a été notifié par email."
+        ),
+    }
+
     return {
+        # MODIFIÉ : toujours True — plus aucun blocage
         "allowed"      : True,
         "alert_level"  : level,
-        "message"      : {
-            "ok"        : f"✓ Autorisé. Restant après : {seuil_max - new_total:.3f} TND.",
-            "warning_80": "⚠ 80% du plafond notes de frais atteint.",
-            "warning_90": "⚠ 90% du plafond notes de frais atteint.",
-        }.get(level, ""),
+        "message"      : messages.get(level, ""),
         "new_pct"      : round(new_pct, 2),
         "solde_restant": round(solde_restant, 3),
         "seuil_max"    : round(seuil_max, 3),
@@ -391,7 +454,8 @@ def get_budget_alerts(
 
     rows = db.execute(text("""
         SELECT ba.id, ba.user_id, u.username, ba.alert_type,
-               ba.amount_tnd, ba.seuil, ba.pct_used, ba.acknowledged, ba.created_at
+               ba.amount_tnd, ba.seuil, ba.pct_used,
+               ba.email_sent, ba.acknowledged, ba.created_at
         FROM budget_alerts ba
         JOIN users u ON u.id = ba.user_id
         ORDER BY ba.acknowledged ASC, ba.created_at DESC
@@ -399,13 +463,16 @@ def get_budget_alerts(
     """)).fetchall()
 
     return [{
-        "alert_id"    : r[0], "user_id": r[1], "username": r[2],
+        "alert_id"    : r[0],
+        "user_id"     : r[1],
+        "username"    : r[2],
         "alert_type"  : r[3],
         "amount"      : float(r[4]) if r[4] else 0,
         "seuil"       : float(r[5]) if r[5] else 0,
         "pct_used"    : float(r[6]) if r[6] else 0,
-        "acknowledged": bool(r[7]),
-        "created_at"  : str(r[8]) if r[8] else None,
+        "email_sent"  : bool(r[7]),
+        "acknowledged": bool(r[8]),
+        "created_at"  : str(r[9]) if r[9] else None,
     } for r in rows]
 
 

@@ -8,7 +8,7 @@ from app.database.connection import Base
 
 
 class SupplierInvoice(Base):
-    __tablename__ = "supplier_invoices"  # ✅ CORRIGÉ : double underscore
+    __tablename__ = "supplier_invoices"  
 
     id                 = Column(Integer, primary_key=True, index=True)
     document_id        = Column(Integer, nullable=False, unique=True)
@@ -34,7 +34,7 @@ class SupplierInvoice(Base):
 
 
 class InvoiceItem(Base):
-    __tablename__ = "invoice_items"  # ✅ CORRIGÉ : double underscore
+    __tablename__ = "invoice_items"  
 
     id           = Column(Integer,      primary_key=True, index=True)
     invoice_id   = Column(Integer,      nullable=False)

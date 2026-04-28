@@ -355,10 +355,6 @@ def _extract_invoice_number_scored(text: str) -> Optional[ExtractedField]:
 
     return None
 
-# ══════════════════════════════════════════════════════════════
-# DATE — CORRIGÉE pour "Tunis le 24/04/2025"
-# ══════════════════════════════════════════════════════════════
-
 def _extract_date_scored(text: str) -> Optional[ExtractedField]:
     """
     FIX : PaddleOCR peut lire "Tunis le 24/04/2029" au lieu de "2025"

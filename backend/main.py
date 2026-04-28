@@ -1,6 +1,12 @@
-# main.py — VERSION CORS CORRIGÉE
 import sys, os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Chargement du fichier .env 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # lit le fichier .env à la racine du projet
+except ImportError:
+    print("⚠  python-dotenv non installé — variables .env non chargées.")
+    print("   Exécutez : pip install python-dotenv")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

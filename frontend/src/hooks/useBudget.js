@@ -1,19 +1,13 @@
 // ─── src/hooks/useBudget.js ───────────────────────────────────────────────────
-// Hook React : gestion du budget notes de frais.
+// Hook React — gestion du budget notes de frais.
+//
+// MODIFICATIONS PAR RAPPORT À LA VERSION ORIGINALE :
+//   1. checkBudget() → retourne toujours allowed: true (pas de blocage)
+//   2. isBudgetBlocked → toujours false (supprimé fonctionnellement)
+//   3. Nouveau champ isOverThreshold → true si pct ≥ 95% (pour afficher un warning)
 //
 // ⚠️  RÈGLE MÉTIER : le seuil s'applique UNIQUEMENT aux notes de frais.
-//     Toujours passer document_type="expense" pour les notes de frais.
 //     Les factures fournisseur (supplier_invoice) ne sont JAMAIS bloquées.
-//
-// Usage :
-//   const { budgetStatus, checkBudget, isBudgetBlocked } = useBudget();
-//
-//   // Avant de confirmer une note de frais :
-//   const result = await checkBudget(montant, "expense");
-//   if (!result.allowed) { setError(result.message); return; }
-//
-//   // Pour une facture fournisseur : NE PAS appeler checkBudget
-//   // (les factures fournisseur ne sont pas soumises au seuil)
 
 import { useState, useEffect, useCallback } from "react";
 
@@ -49,15 +43,16 @@ export function useBudget() {
 
   // ── Vérifier un montant avant upload ──────────────────────────────────────
   //
-  // ⚠️  APPELER UNIQUEMENT pour les notes de frais (document_type="expense").
-  //     Pour les factures fournisseur : ne pas appeler (toujours autorisé).
+  // MODIFIÉ : allowed est TOUJOURS true — l'upload n'est plus jamais bloqué.
+  //   - Si pct ≥ 95% → alert_level = "warning_95" ou "exceeded"
+  //   - Le composant appelant peut afficher un warning, mais pas bloquer.
   //
   // @param {number}  amountTnd     — montant en TND
-  // @param {string}  documentType  — "expense" TOUJOURS pour notes de frais
+  // @param {string}  documentType  — "expense" pour notes de frais
   //
-  // @returns {object} { allowed, alert_level, message, new_pct, solde_restant }
+  // @returns {object} { allowed: true, alert_level, message, new_pct, solde_restant }
   const checkBudget = useCallback(async (amountTnd, documentType = "expense") => {
-    // Sécurité : les factures fournisseur ne sont jamais bloquées
+    // Factures fournisseur → toujours autorisé, pas de vérification
     if (documentType === "supplier_invoice") {
       return { allowed: true, alert_level: "ok", message: "" };
     }
@@ -75,23 +70,26 @@ export function useBudget() {
         },
         body: JSON.stringify({
           amount_tnd    : amountTnd,
-          document_type : "expense",  // toujours "expense" — jamais supplier_invoice
+          document_type : "expense",
         }),
       });
 
       if (!res.ok) {
-        // Fail-open : en cas d'erreur backend, on laisse passer
-        console.warn("Budget check failed, allowing upload");
+        // Fail-open : erreur backend → on laisse passer
+        console.warn("[Budget] check failed, allowing upload");
         return { allowed: true, alert_level: "ok", message: "" };
       }
 
       const result = await res.json();
       refreshBudget();
-      return result;
+
+      // MODIFIÉ : on force allowed = true côté frontend aussi,
+      // au cas où une ancienne version du backend renverrait false
+      return { ...result, allowed: true };
 
     } catch (err) {
       // Erreur réseau → fail-open
-      console.warn("Budget check network error:", err.message);
+      console.warn("[Budget] network error:", err.message);
       return { allowed: true, alert_level: "ok", message: "" };
     }
   }, [username, refreshBudget]);
@@ -100,8 +98,10 @@ export function useBudget() {
     budgetStatus,
     budgetLoading,
     budgetError,
-    // TRUE uniquement si le plafond de notes de frais est dépassé
-    isBudgetBlocked : budgetStatus?.is_blocked ?? false,
+    // MODIFIÉ : toujours false — plus de blocage
+    isBudgetBlocked : false,
+    // NOUVEAU : true si pct ≥ 95% (utile pour afficher un warning dans l'UI)
+    isOverThreshold : (budgetStatus?.pct_utilise ?? 0) >= 95,
     checkBudget,
     refreshBudget,
   };

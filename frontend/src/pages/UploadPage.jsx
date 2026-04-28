@@ -1,10 +1,17 @@
 // ─── src/pages/UploadPage.jsx ─────────────────────────────────────────────────
 // RESPONSIVE COMPLET — mobile-first, boutons touch-friendly, layout adaptatif
+//
+// MODIFICATIONS :
+//   - Suppression du blocage isBudgetBlocked (l'upload n'est plus jamais bloqué)
+//   - Ajout d'un bandeau d'avertissement orange/rouge si pct ≥ 95%
+//   - Le message d'erreur "Upload bloqué" est retiré
+//   - isOverThreshold utilisé depuis useBudget pour afficher le warning
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Spinner, FileIcon } from "../components/Icons";
 import { useBudget } from "../hooks/useBudget";
 import BudgetWidget  from "../components/BudgetWidget";
+import BudgetAlertBanner  from "../components/BudgetAlertBanner"; 
 
 const BASE_URL = "http://127.0.0.1:8000";
 
@@ -45,6 +52,40 @@ const Toast = ({ type, message, onClose }) => {
   );
 };
 
+// ── Bandeau d'avertissement budget (≥ 95%) ────────────────────────────────────
+// NOUVEAU : affiché quand le seuil est proche ou dépassé, mais sans blocage
+const BudgetWarningBanner = ({ pct, isExceeded }) => (
+  <div style={{
+    marginBottom:16, padding:"12px 16px", borderRadius:12,
+    background: isExceeded
+      ? "rgba(239,68,68,0.1)"
+      : "rgba(249,115,22,0.09)",
+    border: `1px solid ${isExceeded ? "rgba(239,68,68,0.35)" : "rgba(249,115,22,0.3)"}`,
+    display:"flex", alignItems:"flex-start", gap:12,
+    animation:"fade-in 0.3s ease",
+  }}>
+    <span style={{ fontSize:18, flexShrink:0 }}>
+      {isExceeded ? "🚨" : "⚠️"}
+    </span>
+    <div>
+      <p style={{ fontSize:13, fontWeight:600, marginBottom:3,
+                  color: isExceeded ? "#fca5a5" : "#fed7aa" }}>
+        {isExceeded
+          ? `Seuil dépassé (${pct.toFixed(1)}%) — Administrateur notifié par email`
+          : `Attention : ${pct.toFixed(1)}% du plafond de notes de frais atteint`
+        }
+      </p>
+      <p style={{ fontSize:12, color:"#9ca3af", fontWeight:300, lineHeight:1.5 }}>
+        {isExceeded
+          ? "Votre plafond mensuel est dépassé. L'upload reste autorisé."
+          : "Vous approchez de votre limite mensuelle. Un email d'alerte sera envoyé à l'admin."
+        }
+        {" "}Contactez votre responsable si nécessaire.
+      </p>
+    </div>
+  </div>
+);
+
 // ═════════════════════════════════════════════════════════════════════════════
 const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) => {
   const role     = localStorage.getItem("role") || "";
@@ -59,7 +100,8 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
   const [error,      setError]      = useState("");
   const [toast,      setToast]      = useState(null);
 
-  const { budgetStatus, isBudgetBlocked, checkBudget, refreshBudget } = useBudget();
+  // MODIFIÉ : récupération de isOverThreshold (remplace isBudgetBlocked)
+  const { budgetStatus, isOverThreshold, checkBudget, refreshBudget } = useBudget();
 
   const inputExpenseRef = useRef(null);
   const inputInvoiceRef = useRef(null);
@@ -109,11 +151,8 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
     setUploading(true);
     setError("");
 
-    if (isBudgetBlocked) {
-      setError("Upload bloqué : votre plafond mensuel est atteint. Contactez votre administrateur.");
-      setUploading(false);
-      return;
-    }
+    // MODIFIÉ : plus de vérification isBudgetBlocked
+    // L'upload est toujours autorisé — on affiche seulement un warning si ≥ 95%
 
     try {
       const formData = new FormData();
@@ -196,6 +235,12 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
     ? { background:"rgba(16,185,129,0.12)", color:"#10b981", border:"1px solid rgba(16,185,129,0.28)" }
     : { background:"rgba(37,99,235,0.12)",  color:"#60a5fa", border:"1px solid rgba(37,99,235,0.28)"  };
 
+  // Calcul pour l'affichage du warning
+  const currentPct    = budgetStatus?.pct_utilise ?? 0;
+  const isExceeded    = currentPct >= 100;
+  // Afficher le warning seulement pour les notes de frais (pas les factures fournisseur)
+  const showWarning   = isOverThreshold && uploadType === UPLOAD_TYPES.EXPENSE;
+
   return (
     <div style={{ minHeight:"100vh", padding:"var(--page-pt) var(--page-px) 48px", position:"relative", zIndex:1 }}>
       {toast && <Toast type={toast.type} message={toast.message} onClose={() => setToast(null)} />}
@@ -209,7 +254,7 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
             Gestion des documents
           </p>
           <h1 className="page-title" style={{ marginBottom:6 }}>
-            Upload <span style={{color:"#3b82f6"}}>Documents</span>
+            Téléverser <span style={{color:"#3b82f6"}}>Des Documents</span>
           </h1>
           <p style={{ color:"#5a6e99", fontSize:14, fontWeight:300 }}>
             Choisissez le type de document à soumettre.
@@ -220,6 +265,17 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
         <div className="fe2" style={{ marginBottom:18 }}>
           <BudgetWidget compact />
         </div>
+            {/* ── Alerte budget ← AJOUTER ────────────────────────────── */}
+          <BudgetAlertBanner
+          pct={budgetStatus?.pct_utilise ?? 0}
+          dismissible
+          />
+        {/* ── NOUVEAU : Bandeau warning si seuil ≥ 95% (notes de frais) ────── */}
+        {showWarning && (
+          <div className="fe2">
+            <BudgetWarningBanner pct={currentPct} isExceeded={isExceeded} />
+          </div>
+        )}
 
         {/* ── Sélecteur de type ─────────────────────────────────────────────── */}
         <div className="fe2" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"var(--gap)", marginBottom:18 }}>
@@ -321,14 +377,13 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
           </div>
         </div>
 
-        {/* ── Boutons d'action rapide (mobile) ────────────────────────────── */}
+        {/* ── Boutons d'action rapide ──────────────────────────────────────── */}
         <div className="fe2" style={{ marginBottom:18 }}>
           {/* Inputs cachés */}
           <input ref={inputExpenseRef} type="file" multiple accept="application/pdf,image/*" onChange={handlePick} style={{ display:"none" }} />
           <input ref={inputInvoiceRef} type="file" multiple accept="application/pdf,image/*" onChange={role===ROLES.Comptable ? handlePick : undefined} style={{ display:"none" }} />
           <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleCameraCapture} style={{ display:"none" }} />
 
-          {/* Sur mobile : boutons en colonne pour faciliter le touch */}
           <div className="action-row">
             <button
               className="btn-primary"
@@ -343,7 +398,6 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
               Choisir un fichier
             </button>
 
-            {/* Caméra — très utile sur mobile */}
             <button
               className="btn-ghost"
               onClick={() => cameraRef.current?.click()}
@@ -447,7 +501,7 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
                         <polyline points="17,8 12,3 7,8"/>
                         <line x1="12" y1="3" x2="12" y2="15"/>
                       </svg>
-                      Uploader
+                      Téléverser
                     </>
                 }
               </button>
@@ -457,7 +511,7 @@ const UploadPage = ({ onUploaded, onOcrDone, onExpenseOcrDone, addToArchive }) =
               <div style={{ marginBottom:12, padding:"10px 14px", borderRadius:10,
                             background:"rgba(37,99,235,0.08)", border:"1px solid rgba(37,99,235,0.22)",
                             color:"#60a5fa", fontSize:12, display:"flex", alignItems:"center", gap:10 }}>
-                <Spinner /> Extraction OCR en cours…
+                <Spinner /> Extraction en cours…
               </div>
             )}
 

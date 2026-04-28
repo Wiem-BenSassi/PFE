@@ -1,25 +1,26 @@
 import { useState, useEffect, useCallback } from "react";
-
-const STORAGE_KEY = "vernicolor_archives";
+const getStorageKey = () => {
+  const username = localStorage.getItem("username") || "anonymous";
+  return `vernicolor_archives_${username}`;
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Lit les archives depuis localStorage (renvoie [] si absent ou corrompu) */
+/** Lit les archives de l'utilisateur connecté depuis localStorage */
 const readFromStorage = () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getStorageKey());
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 };
 
-/** Persiste le tableau d'archives dans localStorage */
+/** Persiste les archives de l'utilisateur connecté dans localStorage */
 const writeToStorage = (data) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(getStorageKey(), JSON.stringify(data));
   } catch (e) {
-    // localStorage peut être plein (quota dépassé)
     console.error("Archive: échec d'écriture localStorage →", e);
   }
 };
@@ -33,7 +34,6 @@ const fileToDataUrl = (file) =>
     reader.readAsDataURL(file);
   });
 
-/** Formate la taille en octets → "XX.X KB" ou "X.X MB" */
 const formatSize = (bytes) => {
   if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
   return `${(bytes / 1024).toFixed(1)} KB`;
@@ -53,6 +53,8 @@ const formatDate = () => {
 // HOOK PRINCIPAL
 // ══════════════════════════════════════════════════════════════════════════════
 export const useArchive = () => {
+
+  // Initialise l'état avec les archives de l'utilisateur connecté
   const [archivedFiles, setArchivedFiles] = useState(readFromStorage);
 
   // Synchronise l'état React avec localStorage à chaque modification
@@ -60,44 +62,49 @@ export const useArchive = () => {
     writeToStorage(archivedFiles);
   }, [archivedFiles]);
 
+  // ── Recharge les archives quand l'utilisateur change ──────────────────────
+  // Utile si deux utilisateurs se connectent sur le même navigateur
+  useEffect(() => {
+    setArchivedFiles(readFromStorage());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localStorage.getItem("username")]);
+
   /**
-   * Ajoute un fichier à l'archive.
-   * @param {File}   file — objet File natif (ex: depuis input ou drag-and-drop)
+   * Ajoute un fichier à l'archive de l'utilisateur connecté.
+   * @param {File}   file — objet File natif
    * @param {string} type — "expense" | "supplier_invoice"
-   * @returns {Promise<void>}
    */
   const addToArchive = useCallback(async (file, type = "expense") => {
     let dataUrl = null;
     try {
-      // Tente de lire le fichier en base64 (pour l'aperçu)
       dataUrl = await fileToDataUrl(file);
     } catch {
-      // Si la lecture échoue (ex: fichier trop lourd), on stocke sans preview
       dataUrl = null;
     }
 
     const entry = {
-      id      : `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      name    : file.name,
-      date    : formatDate(),
-      size    : formatSize(file.size),
-      sizeRaw : file.size,
+      id        : `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name      : file.name,
+      date      : formatDate(),
+      size      : formatSize(file.size),
+      sizeRaw   : file.size,
       type,
       dataUrl,
+      // ✅ Traçabilité : on sait quel utilisateur a archivé ce fichier
+      uploadedBy: localStorage.getItem("username") || "anonymous",
     };
 
-    setArchivedFiles(prev => [entry, ...prev]); // plus récent en premier
+    setArchivedFiles(prev => [entry, ...prev]);
   }, []);
 
   /**
    * Supprime un fichier de l'archive par son id.
-   * @param {string} id
    */
   const removeFromArchive = useCallback((id) => {
     setArchivedFiles(prev => prev.filter(f => f.id !== id));
   }, []);
 
-  /** Vide entièrement l'archive */
+  /** Vide entièrement l'archive de l'utilisateur connecté */
   const clearArchive = useCallback(() => {
     setArchivedFiles([]);
   }, []);
