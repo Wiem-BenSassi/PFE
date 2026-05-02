@@ -1,13 +1,5 @@
-// ─── src/pages/ExpenseVerificationPage.jsx ──────────────────────────────────
-// Page de vérification d'une note de frais après upload OCR.
-// Même design que InvoiceVerification.jsx (facture fournisseur).
-//
-// Props :
-//   receiptData : données brutes retournées par POST /receipts/upload
-//   onConfirm   : (correctedData) => void — appelée après validation
-//   onBack      : () => void              — retour à la page upload
-
 import { useState, useEffect } from "react";
+import { API_BASE_URL } from "../config/api";
 
 // ── Catégories disponibles (correspondant à expense_categories en BDD) ────────
 const CATEGORIES = [
@@ -77,7 +69,7 @@ export default function ExpenseVerificationPage({ receiptData = {}, onConfirm, o
   useEffect(() => {
     if (!username) return;
     setThresholdLoad(true);
-    fetch(`http://127.0.0.1:8000/admin/user-threshold/${encodeURIComponent(username)}`)
+    fetch(`${API_BASE_URL}/admin/user-threshold/${encodeURIComponent(username)}`)
       .then(r => r.json())
       .then(data => {
         setThreshold(data);
@@ -125,7 +117,7 @@ export default function ExpenseVerificationPage({ receiptData = {}, onConfirm, o
         notes         : form.notes || null,
       };
 
-      const res = await fetch("http://127.0.0.1:8000/receipts/confirm-review", {
+      const res = await fetch(`${API_BASE_URL}/receipts/confirm-review`, {
         method  : "POST",
         headers : {
           "Content-Type": "application/json",

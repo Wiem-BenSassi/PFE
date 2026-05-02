@@ -1,34 +1,10 @@
-// ─── src/pages/InvoiceVerification.jsx ──────────────────────────────────────
-// CONNEXION BACKEND COMPLÈTE :
-//
-//   • POST /invoices/upload          → ré-upload depuis cette page
-//   • PATCH /invoices/{id}/validate  → validation des données corrigées (CORRECTION PRINCIPALE)
-//     ↳ endpoint correct : /invoices/{document_id}/validate  (pas /invoices/verify)
-//
-// GESTION DES SEUILS :
-//   • Le backend retourne requires_validation dans extracted_invoices[0].needs_review
-//   • Si needs_review = true  → l'utilisateur DOIT vérifier manuellement avant de confirmer
-//   • Si needs_review = false → validation automatique après confirmation
-//
-// VÉRIFICATION BUDGET :
-//   • Avant la confirmation, on vérifie le budget avec le montant de la facture ← AJOUTÉ
-//   • Si budget bloqué → erreur affichée, confirmation refusée
-//   • Si warning → message affiché mais on continue
-//
-// ERREURS GÉRÉES :
-//   • 400 — fichier invalide / type non accepté
-//   • 403 — rôle insuffisant
-//   • 404 — facture non trouvée en base
-//   • 500 — erreur serveur
-//   • Réseau hors ligne
-//   • Doublon de fichier
-//   • Mauvais type de document (note de frais vs facture fournisseur)
 
 import { useState, useRef } from "react";
 import { useBudget } from "../hooks/useBudget";   // ← AJOUTÉ
+import { API_BASE_URL } from "../config/api";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-const BASE_URL    = "http://127.0.0.1:8000";
+const BASE_URL    = API_BASE_URL;
 const CURRENCIES  = ["TND", "EUR", "USD", "GBP", "CHF", "TRY", "MAD"];
 const ALLOWED_MIME = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
 
@@ -307,7 +283,7 @@ export default function InvoiceVerification({ ocrData = {}, onConfirm, onBack })
     } catch (err) {
       console.error("Confirmation error:", err);
       if (err.message === "Failed to fetch") {
-        setSubmitError("Impossible de contacter le serveur. Vérifiez que le backend est démarré sur http://127.0.0.1:8000");
+        setSubmitError(`Impossible de contacter le serveur. Vérifiez que le backend est démarré sur ${API_BASE_URL}`);
       } else {
         setSubmitError(err.message || "Une erreur est survenue lors de la validation.");
       }

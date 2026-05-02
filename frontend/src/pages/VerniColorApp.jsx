@@ -1,8 +1,3 @@
-// ─── src/pages/VerniColorApp.jsx ─────────────────────────────────────────────
-// MODIFICATION : ajout du flux "expense" →  ExpenseVerificationPage
-// MODIFICATION : ajout de la route "budget_admin" → BudgetAdminPage
-// MODIFICATION : ajout de l'archivage frontend → ArchivePage + useArchive ← AJOUTÉ
-
 import { useState, useEffect } from "react";
 
 import GlobalStyles       from "../components/GlobalStyles";
@@ -22,7 +17,7 @@ import ArchivePage              from "./ArchivePage";        // ← AJOUTÉ
 import { useArchive }           from "../hooks/useArchive";  // ← AJOUTÉ
 
 
-// ── RBAC — permissions par page ──────────────────────────────────────────────
+// ── RBAC définition des role autorises par page 
 const PAGE_ROLES = {
   dashboard : ["Comptable"],
   admin     : ["Administrateur Système", "Administrateur"],
@@ -72,13 +67,15 @@ export default function VerniColorApp() {
       setPage("home");
     }
   };
-
-  // ── Login ─────────────────────────────────────────────────────────────────
+// sauvegarde username + role dans le localstorage du navigateur
+// ── Login ─────────────────────────────────────────────────────────────────
   const handleLogin = (name, role) => {
     setUsername(name);
     localStorage.setItem("username", name);
     localStorage.setItem("role", role || "Utilisateur");
     const isAdmin = ["Administrateur Système", "Administrateur"].includes(role);
+  //redirige vers le bon page selon le role
+  //Admin -> page admin + home 
     setPage(isAdmin ? "admin" : "home");
   };
 

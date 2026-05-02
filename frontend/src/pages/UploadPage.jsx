@@ -1,19 +1,12 @@
-// ─── src/pages/UploadPage.jsx ─────────────────────────────────────────────────
-// RESPONSIVE COMPLET — mobile-first, boutons touch-friendly, layout adaptatif
-//
-// MODIFICATIONS :
-//   - Suppression du blocage isBudgetBlocked (l'upload n'est plus jamais bloqué)
-//   - Ajout d'un bandeau d'avertissement orange/rouge si pct ≥ 95%
-//   - Le message d'erreur "Upload bloqué" est retiré
-//   - isOverThreshold utilisé depuis useBudget pour afficher le warning
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Spinner, FileIcon } from "../components/Icons";
 import { useBudget } from "../hooks/useBudget";
 import BudgetWidget  from "../components/BudgetWidget";
-import BudgetAlertBanner  from "../components/BudgetAlertBanner"; 
+import BudgetAlertBanner  from "../components/BudgetAlertBanner";
+import { API_BASE_URL } from "../config/api"; 
 
-const BASE_URL = "http://127.0.0.1:8000";
+const BASE_URL = API_BASE_URL;
 
 const ROLES = {
   ADMIN_SYSTEME : "Administrateur Système",

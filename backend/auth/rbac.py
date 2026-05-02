@@ -1,6 +1,4 @@
-# ─── app/auth/rbac.py ────────────────────────────────────────────────────────
-# VERSION CORRIGÉE - Rôles alignés avec le frontend React
-
+#ogique centrale de gestion des autorisations
 from fastapi           import Depends, HTTPException, Header
 from sqlalchemy.orm    import Session
 from sqlalchemy        import text
@@ -25,11 +23,11 @@ PERMISSIONS = {
     "manage_admin"            : [ROLES.ADMIN_SYSTEME, ROLES.ADMIN_METIER],
 }
 
-
+#vérifier rapidement si un rôle a le droit d’effectuer une action spécifique.
 def can(role: str, action: str) -> bool:
     return role in PERMISSIONS.get(action, [])
 
-
+#récupérer les informations de l’utilisateur connecté à chaque requête API
 def get_current_user(
     x_user_id: Optional[int] = Header(default=None, alias="X-User-Id"),
     x_username: Optional[str] = Header(default=None, alias="X-Username"),
@@ -63,8 +61,7 @@ def get_current_user(
         role = ROLES.ADMIN_SYSTEME
         username = "dev"
     return FakeUser()
-
-
+#bloque les roles non autorisés
 def require_role(allowed_roles: List[str]):
     def dependency(current_user = Depends(get_current_user)):
         if current_user.role not in allowed_roles:

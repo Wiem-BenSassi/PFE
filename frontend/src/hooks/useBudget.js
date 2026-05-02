@@ -11,7 +11,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-const BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "../config/api";
+
+const BASE_URL = API_BASE_URL;
 
 export function useBudget() {
   const [budgetStatus,  setBudgetStatus]  = useState(null);

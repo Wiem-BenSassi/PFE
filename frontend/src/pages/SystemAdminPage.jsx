@@ -5,8 +5,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from "react";
+import { API_BASE_URL } from "../config/api";
 
-const API = "http://127.0.0.1:8000/sysadmin";
+const API = `${API_BASE_URL}/sysadmin`;
 
 // ── Rôles disponibles dans le système (4 rôles uniquement) ──────────────────
 const ROLES_LIST = [

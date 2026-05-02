@@ -3,7 +3,8 @@
 // Utilise le username stocké dans localStorage pour les headers X-Username.
 // Le backend utilise X-Username pour résoudre l'utilisateur (pas de JWT pour l'instant).
 
-const BASE = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "./config/api";
+const BASE = API_BASE_URL;
 
 // ── Helper : headers communs ──────────────────────────────────────────────────
 const getHeaders = (extra = {}) => ({

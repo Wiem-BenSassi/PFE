@@ -10,8 +10,9 @@
 //   • Filtres : rôle, statut d'alerte
 
 import { useState, useEffect, useCallback } from "react";
+import { API_BASE_URL } from "../config/api";
 
-const BASE_URL = "http://127.0.0.1:8000";
+const BASE_URL = API_BASE_URL;
 const fmt      = (n) => Number(n).toLocaleString("fr-TN", { minimumFractionDigits: 3 }) + " TND";
 
 // ── Couleurs d'alerte ─────────────────────────────────────────────────────────

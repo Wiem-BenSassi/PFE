@@ -1,4 +1,3 @@
-# Ce fichier gère l'endpoint de connexion : POST /auth/login
 # Quand un utilisateur soumet le formulaire de login, c'est ici que ça arrive
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -10,9 +9,7 @@ from sqlalchemy.orm import Session
 from app.database.connection import get_db
 
 router = APIRouter()
-
 # Outil pour hasher et vérifier les mots de passe avec bcrypt
-# (utile si on passe un jour aux mots de passe hashés en base)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Structure des données attendues dans la requête JSON
@@ -20,7 +17,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 class LoginRequest(BaseModel):
     email: str
     password: str
-
 # Endpoint POST /login
 # db est injecté automatiquement par FastAPI grâce à Depends(get_db)
 @router.post("/login")
@@ -40,7 +36,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail="Database connection failed")
 
     # Si aucun utilisateur trouvé, ou mot de passe incorrect → on refuse la connexion
-    # result[2] correspond à la colonne "password" dans la requête SELECT
+    # backend retourner HTTP401
     if result is None or result[2] != data.password:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 

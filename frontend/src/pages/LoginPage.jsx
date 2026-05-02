@@ -1,12 +1,6 @@
-// ─── src/pages/LoginPage.jsx ─────────────────────────────────────────────────
-// Page de connexion.
-//
-// MODIFICATION RBAC :
-//   onLogin(username, role) — le rôle est maintenant passé au parent
-//   qui le sauvegarde dans localStorage (VerniColorApp.jsx).
-
 import { useState } from "react";
 import { AutomotiveIcon, Spinner, EyeIcon } from "../components/Icons";
+import { API_BASE_URL } from "../config/api";
 
 const LoginPage = ({ onLogin }) => {
   const [email,          setEmail]          = useState("");
@@ -22,7 +16,7 @@ const LoginPage = ({ onLogin }) => {
   const [showResetModal, setShowResetModal] = useState(false);
 
   const triggerShake = () => { setShake(true); setTimeout(() => setShake(false), 500); };
-
+//quand l'utilisateur clique "se connecter"
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) {
@@ -32,7 +26,8 @@ const LoginPage = ({ onLogin }) => {
     }
     try {
       setLoading(true);
-      const response = await fetch("http://127.0.0.1:8000/auth/login", {
+//envoie la requete POST au backend fastapi
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method  : "POST",
         headers : { "Content-Type": "application/json" },
         body    : JSON.stringify({ email, password }),
